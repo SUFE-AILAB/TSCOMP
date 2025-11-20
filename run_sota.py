@@ -1,0 +1,318 @@
+import pandas as pd
+import subprocess
+from multiprocessing import Pool
+import argparse
+
+def run_task(task_command, task_id):
+    try:
+        # 使用 subprocess 来执行 shell 命令
+        subprocess.run(task_command, shell=True, check=True)
+        print(f"Task {task_id} completed successfully.", flush=True)
+    except subprocess.CalledProcessError as e:
+        print(f"\nError executing task {task_id}: \n{e}", flush=True)
+
+def create_task_list(param_devices, env):
+    # https://decisionintelligence.github.io/OpenTS/datasets/#Multivariate-time-series
+    # Prepare the cleaned data from the OCR result
+    data=[
+        # ["metr-la", "Traffic", "5 mins", 34272, 207, "7:1:2"],
+        # ["pems-bay", "Traffic", "5 mins", 52116, 325, "7:1:2"],
+        # ["pems04", "Traffic", "5 mins", 16992, 307, "6:2:2"],
+        # ["pems08", "Traffic", "5 mins", 17856, 170, "6:2:2"],
+        # ["ETTh1", "Electricity", "1 hour", 14400, 7, "7:1:2","ETTh1"],
+        # ["ETTh2", "Electricity", "1 hour", 14400, 7, "7:1:2","ETTh2"],
+        # ["weather", "Environment", "10 mins", 52696, 21, "7:1:2"],
+        # ["ETTm2", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm2"],
+        # ["electricity", "Electricity", "1 hour", 26304, 321, "6:2:2","ECL"],
+        # ["solar", "Energy", "10 mins", 52560, 137, "6:2:2"],
+        # ["wind", "Energy", "15 mins", 48673, 7, "7:1:2"],
+        # ["ETTm1", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm1"],
+        # ["aqshunyi", "Environment", "1 hour", 35064, 11, "6:2:2"],
+        # ["aqwan", "Environment", "1 hour", 35064, 11, "6:2:2", "aqwan"],
+        # ["zafnoo", "Nature", "30 mins", 19225, 1, "7:1:2", "zafnoo"],
+        ["czelan", "Nature", "30 mins", 19934, 11, "7:1:2", "czelan"],
+        # ["fred-md", "Economic", "1 month", 728, 107, "7:1:2"]
+        # ["exchange_rate", "Economic", "1 day", 7588, 8, "7:1:2","Exchange"],
+        # ["nasdaq", "Stock", "1 day", 1244, 5, "7:1:2"],
+        # ["nyse", "Stock", "1 day", 1243, 5, "7:1:2"],
+        # ["nn5", "Banking", "1 day", 791, 111, "7:1:2"],
+        # ["ili", "Health", "1 week", 966, 7, "7:1:2"],
+        # ["covid-19", "Health", "1 day", 1392, 948, "7:1:2"],
+        # ["wike2000", "Web", "1 day", 792, 2000, "7:1:2"],
+
+        # ["M4-Yearly", "Demographic", "1 year", 6, 1, "7:1:2", "m4_Yearly"],
+        # ["M4-Quarterly", "Finance", "1 quarter", 8, 1, "7:1:2", "m4_Quarterly"],
+        # ["M4-Monthly", "Industry", "1 month", 18, 1, "7:1:2", "m4_Monthly"],
+        # ["M4-Weekly", "Macro", "1 week", 13, 1, "7:1:2", "m4_Weekly"],
+        # ["M4-Daily", "Micro", "1 day", 14, 1, "7:1:2", "m4_Daily"],
+        # ["M4-Hourly", "Other", "1 hour", 48, 1, "7:1:2", "m4_Hourly"]
+        # ["electricity", "Electricity", "1 hour", 26304, 321, "6:2:2","ECL"],
+        # ["traffic", "Traffic", "1 hour", 17544, 862, "7:1:2","traffic"],
+        # ["ETTm2", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm2"],
+    ]
+    df = pd.DataFrame(data, columns=["Dataset", "Domain", "Frequency", "Lengths", "Dim", "Split","model_id"])
+    df['model_id'] = df['model_id'].fillna(df['Dataset'])
+
+    # # 读取 Excel 文件
+    # trained_model_xlsx = pd.read_excel('./meta/results_vis-ls/component_balance_True-add_new_dataset_True-add_transformer_True.xlsx')  # 如果有多个 sheet，可以加 sheet_name 参数
+    # # 初始化字典
+    # trained_model = {}
+    # # 遍历所有列（每两列一组：model名 + 对应值列）
+    # for i in range(0, len(trained_model_xlsx.columns), 2):
+    #     model_col = trained_model_xlsx.columns[i]
+    #     dataset_col = trained_model_xlsx.columns[i+1]
+
+    #     # 获取当前列中不为空的模型名称
+    #     models = trained_model_xlsx[model_col].dropna().tolist()
+        
+    #     # 加入字典
+    #     trained_model[dataset_col] = models
+
+    task_list = []
+    if env == 'mqenv':
+        # model_list =  ['Autoformer', 'PatchTST', 'DLinear', 'LightTS', 'Pyraformer', 
+        #             'MICN', 'Koopa', 'FEDformer', 'Reformer', 'SegRNN', 'Crossformer',
+        #                 'TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer','TSMixer',
+        #                 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 'SCINet',
+        #                 'TemporalFusionTransformer', 'PAttn','TiDE' , 'TimesNet']# , 'Transformer'
+        model_list =  ['PatchTST', 'SegRNN','TimeMixer','TimesNet','DUET','Autoformer','MICN']
+    elif env =='mamba':
+         # 在虚拟环境mamba中运行
+        model_list =  ['Mamba'] # ,'MambaSimple'
+        
+    for i in range(len(df)):
+        for model_name in model_list:
+            data_name = df.loc[i, 'Dataset']
+            data_fea_num = df.loc[i, 'Dim']
+            data_model_id = df.loc[i, 'model_id']
+            
+            # if model_name in trained_model[data_model_id]:
+            #     continue
+            # else:
+            print(model_name, data_model_id)
+                
+            # 不同数据对应不同的data，以及不同的root_path、data_path
+            if 'ETT' in data_name:
+                root_path = 'ETT-small'
+                data_type = data_name
+            elif 'M4' in data_name:
+                root_path = 'm4'
+                data_type = 'm4'
+            elif data_name == 'ili':
+                root_path = 'illness'
+                data_type = 'custom'
+            else:
+                root_path = data_name
+                data_type = 'custom'
+            data_path = 'national_illness' if data_name == 'ili' else data_name
+            
+            # ETS模型结构决定encoder和decoder必须是一样的层数
+            e_layers, d_layers = (2, 2) if model_name == 'ETSformer' else (2, 1)
+            
+            if data_model_id == 'ECL':
+                # 仿照已有sota设置参数，使得训练效率更高
+                d_model, d_ff =256, 512
+            if 'Mamba' in model_name:
+                # Mamba 要求d_ff小于等于256，仿照已有sota设置参数
+                d_model, d_ff = 128, 16
+            elif model_name == 'TimeMixer':
+                # 仿照已有sota设置参数，使得训练效率更高
+                d_model, d_ff = 16, 32
+            elif model_name == 'Crossformer' or model_name == 'TemporalFusionTransformer' \
+                or model_name == 'TiDE' or  model_name =='Pyraformer' or model_name == 'FiLM':
+                # 仿照已有sota设置参数，使得训练效率更高
+                d_model, d_ff = 256, 512
+            elif model_name == 'TimesNet':
+                # 仿照已有sota设置参数，使得训练效率更高
+                d_model, d_ff = 64, 64
+            else:
+                d_model, d_ff = 512, 2048
+
+            if 'M4' in data_name:
+                # short-term
+                if model_name == 'Koopa' or  model_name == 'TemporalFusionTransformer':
+                    # Koopa没有短期预测
+                    # 短期预测没输入mask时间信息，没办法用TemporalFusionTransformer
+                    continue
+                elif model_name == 'Crossformer' or  model_name == 'FiLM' or  model_name == 'MICN':
+                    if 'Monthly' in data_name or 'Yearly' in data_name or 'Weekly' in data_name or 'Hourly' in data_name:
+                        d_ff, d_model = 32, 32
+                    elif 'Daily' in data_name:
+                        d_ff, d_model = 16, 16
+                    elif 'Quarterly' in data_name:
+                        d_ff, d_model = 64, 64
+
+                seasonal_patterns = data_model_id.split('_')[-1]
+                # TimeXer SegRNN
+                patch_len = 2
+                if model_name == 'SegRNN' and 'Weekly' in data_name:
+                    patch_len = 1
+                task_command = f"""CUDA_VISIBLE_DEVICES={param_devices} python3 -u run.py \
+                        --task_name short_term_forecast \
+                        --is_training 1 \
+                        --root_path ./dataset/{root_path}/ \
+                        --seasonal_patterns {seasonal_patterns} \
+                        --model_id {data_model_id} \
+                        --model {model_name} \
+                        --data {data_type} \
+                        --features M \
+                        --e_layers {e_layers} \
+                        --d_layers {d_layers} \
+                        --factor 3 \
+                        --enc_in {data_fea_num} \
+                        --dec_in {data_fea_num} \
+                        --c_out {data_fea_num} \
+                        --des 'Exp' \
+                        --itr 1 \
+                        --down_sampling_layers 1 \
+                        --down_sampling_window 2 \
+                        --down_sampling_method avg \
+                        --d_model {d_model} \
+                        --d_ff {d_ff} \
+                        --loss 'SMAPE' \
+                        --batch_size 16 \
+                        --learning_rate 0.001 \
+                        --devices {param_devices} \
+                        --patch_len {patch_len} \
+                        --seg_len {patch_len} """
+                task_list.append(task_command)
+
+            else:
+                # long-term
+                pred_len_list = [96, 192, 336, 720] # 96, 192, 336, 720
+                ili_pred_len_list = [24, 36, 48, 60] # 24, 36, 48, 60
+                for ii, pred_len in enumerate(pred_len_list):
+                    if data_model_id == 'ECL' and model_name == 'TemporalFusionTransformer' and pred_len ==720:
+                        d_model, d_ff = 64, 64
+                    if data_model_id == 'traffic' and model_name == 'TiDE' and pred_len in [192,336]:
+                        d_model, d_ff = 64, 64
+                    if data_model_id == 'traffic' and model_name == 'TemporalFusionTransformer' and pred_len in [192,336]:
+                        d_model, d_ff = 64, 64
+                    if data_model_id == 'traffic' and model_name == 'FiLM' and pred_len ==720:
+                        d_model, d_ff = 64, 64
+                        
+                    batch_size = 32
+                    learning_rate=0.0001
+                    # Ili数据集预测长度不同
+                    if data_name == 'ili' or data_name == 'covid-19' or data_name == 'fred-md' :
+                        pred_len = ili_pred_len_list[ii]
+                        seq_len = 36
+                        label_len = 18 # seq_len的一半
+                        # SegRNN seq_len、label_len、pred_len必须是seg_len的整数倍
+                        seg_len = 12
+                        
+                        if model_name == 'Koopa':
+                            # Koopa seq_len必须是seg_len的两倍或两倍以上，其中seg_len=pred_len（写死）
+                            seq_len = pred_len*2
+                            label_len = 48
+                        elif model_name == 'LightTS' or model_name == 'SegRNN':
+                            # SegRNN seq_len、label_len、pred_len必须是seg_len的整数倍
+                            # LightTS seq_len和label_len必须是chunk_size（24）的整数倍
+                            seq_len = 48
+                            label_len = 48
+                        elif model_name == 'MICN':
+                            # MICN seq_len=label_len
+                            seq_len = 36
+                            label_len = 36
+                        elif model_name == 'FiLM':
+                            # 参考ili参数设置 FiLM会提取不同回看长度的的多尺度信息
+                            seq_len = 60
+                            label_len = 18
+                        elif 'Mamba' in model_name:
+                            # 参考scripts参数 seq_len = pred_len
+                            seq_len = pred_len
+                            label_len = 18
+                            
+                        # TimeMixer 由于seq_len=36最多能被2除2次
+                        down_sampling_layers = 1
+                    else:
+                        seq_len = 96
+                        label_len = 48
+                        seg_len = 48
+                            
+                        if model_name == 'Koopa':
+                            # Koopa seq_len必须是seg_len的两倍或两倍以上，其中seg_len=pred_len（写死）
+                            seq_len = pred_len*2
+                            label_len = 48
+                        elif model_name == 'MICN':
+                            # MICN seq_len=label_len
+                            seq_len = 96
+                            label_len = 96
+                        elif model_name == 'FiLM':
+                            # 参考weather scripts中参数设置 FiLM会提取不同回看长度的的多尺度信息
+                            seq_len = pred_len
+                            label_len = 48
+                        elif 'Mamba' in model_name:
+                            # 参考scripts参数
+                            seq_len = pred_len
+                            label_len = 48
+
+                        # TimeMixer 参考其它sota
+                        down_sampling_layers = 3
+
+                        if model_name == 'FiLM':
+                            # 仿照已有sota设置参数，使得训练效率更高
+                            if data_model_id == 'ECL':
+                                batch_size=4
+                            if data_model_id == 'traffic':
+                                batch_size=2
+                        if model_name == 'TimeMixer':
+                            # 仿照已有sota设置参数，使得训练效率更高
+                            batch_size=16
+                            learning_rate=0.01
+                            
+                    task_command = f"""CUDA_VISIBLE_DEVICES={param_devices} python3 -u run.py \
+                            --task_name long_term_forecast \
+                            --is_training 1 \
+                            --root_path ./dataset/{root_path}/ \
+                            --data_path {data_path}.csv \
+                            --model_id {data_model_id}_{seq_len}_{pred_len} \
+                            --model {model_name} \
+                            --data {data_type} \
+                            --features M \
+                            --seq_len {seq_len} \
+                            --label_len {label_len} \
+                            --pred_len {pred_len} \
+                            --seg_len {seg_len} \
+                            --e_layers {e_layers} \
+                            --d_layers {d_layers} \
+                            --factor 3 \
+                            --enc_in {data_fea_num} \
+                            --dec_in {data_fea_num} \
+                            --c_out {data_fea_num} \
+                            --des 'Exp' \
+                            --itr 1 \
+                            --down_sampling_layers {down_sampling_layers} \
+                            --down_sampling_window 2 \
+                            --down_sampling_method avg \
+                            --d_model {d_model} \
+                            --d_ff {d_ff} \
+                            --batch_size {batch_size} \
+                            --learning_rate {learning_rate} \
+                            --devices {param_devices}"""
+                    task_list.append(task_command)
+    
+    return task_list
+
+def main():
+    # 创建任务列表
+    parser = argparse.ArgumentParser(description='TimesNet')
+    parser.add_argument('--devices', type=str, default='0', help='device ids of multile gpus')
+    parser.add_argument('--processes_num', type=int, default=1, help='processes')
+    parser.add_argument('--env', type=str, default='mqenv', help='env')
+    args = parser.parse_args()
+    
+    task_list = create_task_list(args.devices, args.env)
+
+    # 使用 multiprocessing.Pool 来并行运行任务
+    with Pool(processes=args.processes_num) as pool:  # 设置进程池的大小（例如5个并行进程）
+        pool.starmap(run_task, [(command, idx + 1) for idx, command in enumerate(task_list)])
+
+        # 等待所有任务完成
+        pool.close()  # 关闭进程池，停止接受新任务
+        pool.join()  # 等待池中的所有任务完成
+
+    print("All tasks started.")
+
+if __name__ == "__main__":
+    main()

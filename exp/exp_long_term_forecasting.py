@@ -13,7 +13,7 @@ import numpy as np
 from utils.dtw_metric import dtw,accelerated_dtw
 from utils.augmentation import run_augmentation,run_augmentation_single
 import shutil
-from utils.losses import MAPELoss
+from utils.losses import MAPELoss, PSLoss, FreDFLoss, DBLoss
 warnings.filterwarnings('ignore')
 
 
@@ -21,6 +21,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecast, self).__init__(args)
         self.train_cost = 0
+        self.logger = args.logger
 
     def _build_model(self):
         if 'Gym' not in self.args.model:
@@ -30,6 +31,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
             gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
             gym_encoder_only, gym_frozen = self.args.model.split('_')
+            model_name = 'TSGym'
             model = self.model_dict[model_name].Model(self.args,
                                                       gym_x_mark=gym_x_mark,
                                                       gym_series_sampling=gym_series_sampling,
@@ -65,6 +67,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             return MAPELoss()
         elif self.args.loss == 'HUBER':
             criterion = nn.HuberLoss(delta=0.5)
+        elif self.args.loss == "DBLoss":
+            criterion = DBLoss(alpha=self.args.DBLossalpha, beta=self.args.DBLossbeta)
+        elif self.args.loss == 'PSLoss':
+            criterion = nn.MSELoss()
+            self.ps_loss = PSLoss(patch_len_threshold=self.args.patch_len_threshold)
+        elif self.args.loss == 'FreDFLoss':
+            criterion = nn.MSELoss()
+            self.fredf_loss = FreDFLoss(self.args, self.device)
         else:
             raise NotImplementedError
         return criterion
@@ -92,7 +102,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # update 0729 cc: save the checkpoints with dataset name
         best_model_path = path + '/' + f'{self.args.data_path.replace(".csv","")}_checkpoint.pth'
         if os.path.exists(best_model_path) and False: # TODO: 暂时不跳过实验
-            print(f'The model file already exists! loading...')
+            self.logger.info(f'The model file already exists! loading...')
             self.model.load_state_dict(torch.load(best_model_path))
         else:
             epoch_time_avg = []
@@ -127,6 +137,19 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
                         loss = criterion(outputs, batch_y)
+
+                        # Add aux Loss
+                        if self.args.loss == 'PSLoss':
+                            ps_loss = self.ps_loss(batch_y, outputs, self.model)
+                            loss += ps_loss * self.args.ps_lambda
+                        elif self.args.loss == 'FreDFLoss': 
+                            if self.args.auxi_lambda:
+                                loss = (1 - self.args.auxi_lambda) * loss
+                            fredf_loss = self.fredf_loss(outputs, batch_y)
+                            loss += self.args.auxi_lambda * fredf_loss
+                        else:
+                            pass
+
                         train_loss.append(loss.item())
 
                     if (i + 1) % 100 == 0:
@@ -250,10 +273,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
-        print('test shape:', preds.shape, trues.shape)
+        self.logger.info('test shape:', preds.shape, trues.shape)
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        print('test shape:', preds.shape, trues.shape)
+        self.logger.info('test shape:', preds.shape, trues.shape)
 
         # result save
         dataset = self.args.model_id.split('_')[0]
@@ -280,7 +303,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 x = preds[i].reshape(-1,1)
                 y = trues[i].reshape(-1,1)
                 if i % 100 == 0:
-                    print("calculating dtw iter:", i)
+                    self.logger.info("calculating dtw iter:", i)
                 d, _, _, _ = accelerated_dtw(x, y, dist=manhattan_distance)
                 dtw_list.append(d)
             dtw = np.array(dtw_list).mean()
@@ -289,7 +312,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             
 
         mae, mse, rmse, mape, mspe = metric(preds, trues)
-        print('mse:{}, mae:{}, mape:{}, dtw:{}'.format(mse, mae, mape, dtw))
+        self.logger.info('mse:{}, mae:{}, mape:{}, dtw:{}'.format(mse, mae, mape, dtw))
         # f = open("result_long_term_forecast.txt", 'a')
         # f.write(setting + "  \n")
         # f.write('mse:{}, mae:{}, dtw:{}'.format(mse, mae, dtw))

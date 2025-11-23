@@ -20,6 +20,7 @@ warnings.filterwarnings('ignore')
 class Exp_Short_Term_Forecast(Exp_Basic):
     def __init__(self, args):
         super(Exp_Short_Term_Forecast, self).__init__(args)
+        self.logger = args.logger
 
     def _build_model(self):
         if self.args.data == 'm4':
@@ -35,6 +36,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
             gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
             gym_encoder_only, gym_frozen = self.args.model.split('_')
+            model_name = 'TSGym'
             model = self.model_dict[model_name].Model(self.args,
                                                       gym_x_mark=gym_x_mark,
                                                       gym_series_sampling=gym_series_sampling,
@@ -90,7 +92,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         best_model_path = path + '/' + 'checkpoint.pth'
         if os.path.exists(best_model_path):
-            print(f'The model file already exists! loading...')
+            self.logger.info(f'The model file already exists! loading...')
             self.model.load_state_dict(torch.load(best_model_path))
         else:
             epoch_time_avg = []
@@ -126,10 +128,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     train_loss.append(loss.item())
 
                     if (i + 1) % 100 == 0:
-                        print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                        self.logger.info("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
                         speed = (time.time() - time_now) / iter_count
                         left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                        print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                        self.logger.info('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
                         iter_count = 0
                         time_now = time.time()
 
@@ -137,15 +139,15 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     model_optim.step()
 
                 epoch_time_avg.append(time.time() - epoch_time)
-                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+                self.logger.info("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
                 train_loss = np.average(train_loss)
                 vali_loss = self.vali(train_loader, vali_loader, criterion)
                 test_loss = vali_loss
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                self.logger.info("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
                 early_stopping(vali_loss, self.model, path)
                 if early_stopping.early_stop:
-                    print("Early stopping")
+                    self.logger.info("Early stopping")
                     break
 
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
@@ -196,7 +198,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         checkpoint_path = f'./checkpoints{self.save_suffix}/' + setting
         if test:
-            print('loading model')
+            self.logger.info('loading model')
             self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
 
         # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
@@ -217,7 +219,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                                                                       dec_inp[id_list[i]:id_list[i + 1]], None)
 
                 if id_list[i] % 1000 == 0:
-                    print(id_list[i])
+                    self.logger.info(id_list[i])
 
             f_dim = -1 if self.args.features == 'MS' else 0
             outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -231,7 +233,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 gt = np.concatenate((x[i, :, 0], trues[i]), axis=0)
                 pd = np.concatenate((x[i, :, 0], preds[i, :, 0]), axis=0)
                 # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
-        print('test shape:', preds.shape)
+        self.logger.info('test shape:', preds.shape)
 
         # result save
         dataset = self.args.model_id.split('_')[0]
@@ -256,7 +258,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         forecasts_df.set_index(forecasts_df.columns[0], inplace=True)
         forecasts_df.to_csv(folder_path + self.args.seasonal_patterns + '_forecast.csv')
 
-        print(self.args.model)
+        self.logger.info(self.args.model)
         if 'Weekly_forecast.csv' in os.listdir(folder_path) \
                 and 'Monthly_forecast.csv' in os.listdir(folder_path) \
                 and 'Yearly_forecast.csv' in os.listdir(folder_path) \
@@ -266,10 +268,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             m4_summary = M4Summary(folder_path, self.args.root_path)
             # m4_forecast.set_index(m4_winner_forecast.columns[0], inplace=True)
             smape_results, owa_results, mape, mase = m4_summary.evaluate()
-            print('smape:', smape_results)
-            print('mape:', mape)
-            print('mase:', mase)
-            print('owa:', owa_results)
+            self.logger.info('smape:', smape_results)
+            self.logger.info('mape:', mape)
+            self.logger.info('mase:', mase)
+            self.logger.info('owa:', owa_results)
 
             # save results
             np.savez_compressed(folder_path + 'metrics.npz',
@@ -282,7 +284,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             #     if os.path.isfile(os.path.join(folder_path, csv)):
             #         os.remove(os.path.join(folder_path, csv))
         else:
-            print('After all 6 tasks are finished, you can calculate the averaged index')
+            self.logger.info('After all 6 tasks are finished, you can calculate the averaged index')
 
 
         if os.path.exists(checkpoint_path):

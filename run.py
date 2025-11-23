@@ -19,8 +19,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='TimesNet')
 
-    logging.basicConfig(filename='error.log', filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
-    logger = logging.getLogger()
+
 
     # basic config
     parser.add_argument('--task_name', type=str, required=True, default='long_term_forecast',
@@ -150,6 +149,24 @@ if __name__ == '__main__':
     parser.add_argument('--noisy_gating', action='store_true', help='noisy gating', default=False)
     parser.add_argument('--k', type=int, default=1, help='noisy gating top k')
     
+    # DBLoss
+    parser.add_argument('--DBLossalpha', type=float, default=0.2, help='alpha parameter for DBLoss')
+    parser.add_argument('--DBLossbeta', type=float, default=0.5, help='beta parameter for DBLoss')
+
+    # auxi PSLoss
+    parser.add_argument('--ps_lambda', type=float, default=0.3, help='weight for ps_loss')
+    parser.add_argument('--patch_len_threshold', type=int, default=24, help='patch length threshold')
+    # auxi FreDF
+    parser.add_argument('--auxi_lambda', type=float, default=0.5, help='weight of auxilary function')
+    parser.add_argument('--auxi_loss', type=str, default='MAE', help='loss function')
+    parser.add_argument('--auxi_mode', type=str, default='fft', help='auxi loss mode, options: [fft, rfft]')
+    parser.add_argument('--auxi_type', type=str, default='complex', help='auxi loss type, options: [complex, mag, phase, mag-phase]')
+    parser.add_argument('--module_first', type=int, default=1, help='calculate module first then mean ')
+    parser.add_argument('--leg_degree', type=int, default=2, help='degree of legendre polynomial')
+    parser.add_argument('--offload', type=int, default=0)
+
+
+    
     args = parser.parse_args()
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
     args.use_gpu = True if torch.cuda.is_available() else False
@@ -183,7 +200,8 @@ if __name__ == '__main__':
             setting = '{}_{}_{}_ft{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
                 args.task_name.replace('short_term_forecast', 'STF'),
                 args.model,
-                args.data,
+                # args.data,
+                args.model_id.split('_')[0], # Update by cc
                 args.features,
                 args.d_model,
                 args.e_layers,
@@ -201,7 +219,7 @@ if __name__ == '__main__':
             setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
                 args.task_name.replace('long_term_forecast', 'LTF'),
                 args.model,
-                args.data,
+                args.model_id.split('_')[0], # Update by cc
                 args.features,
                 args.seq_len,
                 args.label_len,
@@ -223,16 +241,19 @@ if __name__ == '__main__':
         
         return setting
 
+
+
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            exp = Exp(args)  # set experiments
             setting = setting_generator(args, ii)
-            
-            # folder_path = f'./results/' + setting + '/'
-            # folder_pathGym = f'./resultsGym/' + setting + '/'
-            # folder_path1=folder_path
-            # folder_path2=folder_path
+            logging.basicConfig(filename=os.path.join("./logs",f"{setting}.log"), filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+            args.logger = logging.getLogger()
+            try:
+                exp = Exp(args)  # set experiments
+            except Exception as error:
+                args.logger.info(f'Error when initializing the experiment: {setting}, error: {error}')
+                continue
             dataset = args.model_id.split('_')[0]
             folder_path = f'./results_{args.task_name}ing/results/{dataset}/{setting}/'
             if args.task_name == 'short_term_forecast':
@@ -252,28 +273,31 @@ if __name__ == '__main__':
             
             if not os.path.exists(folder_path1) and not os.path.exists(folder_path2) and not os.path.exists(folder_pathGym):
                 try:
-                    print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+                    args.logger.info('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
                     exp.train(setting)
                     
-                    print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+                    args.logger.info('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
                     exp.test(setting)
                 except Exception as error:
-                    print(f'Error when fitting the setting: {setting}, error: {error}')
-                    logger.info(f'Error when fitting the setting: {setting}, error: {error}')
+                    args.logger.info(f'Error when fitting the setting: {setting}, error: {error}')
 
                 torch.cuda.empty_cache()
             else:
-                print(f'The results already exist! skip...')
+                args.logger.info(f'The results already exist! skip...')
     else:
         ii = 0
         setting = setting_generator(args, ii)
-        
+        logging.basicConfig(filename=os.path.join("./logs",f"{setting}.log"), filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+        args.logger = logging.getLogger()
         folder_path = f'./results/' + setting + '/'
         folder_pathGym = f'./resultsGym/' + setting + '/'
         if not os.path.exists(folder_path) and not os.path.exists(folder_pathGym):
-            exp = Exp(args)  # set experiments
-            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            args.logger.info('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            try:
+                exp = Exp(args)  # set experiments
+            except Exception as error:
+                args.logger.info(f'Error when initializing the experiment: {setting}, error: {error}')
             exp.test(setting, test=1)
             torch.cuda.empty_cache()
         else:
-            print(f'The results already exist! skip...')
+            args.logger.info(f'The results already exist! skip...')

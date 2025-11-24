@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import math
 
+import pynvml
+import threading
+import time
+from contextlib import closing
+import sqlite3, time, json
+
 plt.switch_backend('agg')
 
 
@@ -118,3 +124,94 @@ def adjustment(gt, pred):
 
 def cal_accuracy(y_pred, y_true):
     return np.mean(y_pred == y_true)
+
+# large benmark logger
+# DB_PATH = "large_benchmark.db"
+def init_db(DB_PATH='exp_logs.db'):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS exp_logs (
+                exp_setting TEXT PRIMARY KEY,
+                start_time TEXT,
+                end_time TEXT,
+                duration_sec REAL,
+                status TEXT,
+                max_gpu_mem_MB REAL,
+                result_metric TEXT,
+                error_msg TEXT
+            );
+        """)
+        conn.commit()
+
+
+def log_start(exp_setting, DB_PATH='exp_logs.db'):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO exp_logs
+            (exp_setting, start_time, status)
+            VALUES (?, ?, ?)
+        """, (exp_setting, time.strftime("%Y-%m-%d %H:%M:%S"), "RUNNING"))
+        conn.commit()
+
+def log_end(exp_setting, result_metric, max_gpu_mem, error_msg=None, DB_PATH='exp_logs.db'):
+    status = "FAILED" if error_msg else "FINISHED"
+    end_time = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            UPDATE exp_logs
+            SET end_time=?, duration_sec=strftime('%s',?)-strftime('%s',start_time),
+                status=?, result_metric=?, max_gpu_mem_MB=?, error_msg=?
+            WHERE exp_setting=?
+        """, (end_time, end_time, status,
+              json.dumps(result_metric),
+              max_gpu_mem,
+              error_msg,
+              exp_setting))
+        conn.commit()
+    
+# GPU 显存使用
+pynvml.nvmlInit()
+class GPUMemoryMonitor:
+    def __init__(self, interval=1):
+        self.interval = interval
+        self.max_mem = 0
+        self.running = False
+        self.handle = None
+
+        pid = os.getpid()
+        device_count = pynvml.nvmlDeviceGetCount()
+
+        # 找到当前进程所在 GPU
+        for i in range(device_count):
+            h = pynvml.nvmlDeviceGetHandleByIndex(i)
+            infos = pynvml.nvmlDeviceGetComputeRunningProcesses(h)
+            for p in infos:
+                if p.pid == pid:
+                    self.handle = h
+                    break
+            if self.handle:
+                break
+
+    def start(self):
+        if not self.handle:
+            print("No GPU process found.")
+            return
+
+        self.running = True
+        def run():
+            while self.running:
+                infos = pynvml.nvmlDeviceGetComputeRunningProcesses(self.handle)
+                for p in infos:
+                    if p.pid == os.getpid():
+                        self.max_mem = max(self.max_mem, p.usedGpuMemory / 1024**2)
+                time.sleep(self.interval)
+
+        self.thread = threading.Thread(target=run)
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+        if hasattr(self, "thread"):
+            self.thread.join()
+        return self.max_mem

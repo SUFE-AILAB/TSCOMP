@@ -273,10 +273,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
-        self.logger.info('test shape:', preds.shape, trues.shape)
+        self.logger.info(f'test shape:{preds.shape} {trues.shape}')
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        self.logger.info('test shape:', preds.shape, trues.shape)
+        self.logger.info(f'test shape:{preds.shape} {trues.shape}')
 
         # result save
         dataset = self.args.model_id.split('_')[0]
@@ -303,7 +303,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 x = preds[i].reshape(-1,1)
                 y = trues[i].reshape(-1,1)
                 if i % 100 == 0:
-                    self.logger.info("calculating dtw iter:", i)
+                    self.logger.info(f"calculating dtw iter:{i}")
                 d, _, _, _ = accelerated_dtw(x, y, dist=manhattan_distance)
                 dtw_list.append(d)
             dtw = np.array(dtw_list).mean()
@@ -312,7 +312,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             
 
         mae, mse, rmse, mape, mspe = metric(preds, trues)
-        self.logger.info('mse:{}, mae:{}, mape:{}, dtw:{}'.format(mse, mae, mape, dtw))
+        self.logger.info(f"mse:{mse}, mae:{mae}, mape:{mape}, dtw:{dtw}")
         # f = open("result_long_term_forecast.txt", 'a')
         # f.write(setting + "  \n")
         # f.write('mse:{}, mae:{}, dtw:{}'.format(mse, mae, dtw))
@@ -327,4 +327,4 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if os.path.exists(checkpoint_path):
             shutil.rmtree(checkpoint_path)
 
-        return mae, mse, rmse, mape, mspe
+        return f"mse:{mse}, mae:{mae}, mape:{mape}, rmse:{rmse}, mspe:{mspe}, dtw:{dtw}"

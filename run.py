@@ -8,6 +8,7 @@ from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
 from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
 from utils.print_args import print_args
+from utils.tools import GPUMemoryMonitor, init_db, log_start, log_end
 import random
 import numpy as np
 
@@ -181,6 +182,12 @@ if __name__ == '__main__':
 
     print('Args in experiment:')
     print_args(args)
+    # large benchmark log
+    LOG_DB_PATH = f"{args.task_name}_log.db"
+    init_db(LOG_DB_PATH)
+    monitor = GPUMemoryMonitor()
+    monitor.start()
+
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast
@@ -247,12 +254,14 @@ if __name__ == '__main__':
         for ii in range(args.itr):
             # setting record of experiments
             setting = setting_generator(args, ii)
+            log_start(setting, DB_PATH=LOG_DB_PATH)
             logging.basicConfig(filename=os.path.join("./logs",f"{setting}.log"), filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
             args.logger = logging.getLogger()
             try:
                 exp = Exp(args)  # set experiments
             except Exception as error:
                 args.logger.info(f'Error when initializing the experiment: {setting}, error: {error}')
+                log_end(setting, None, None, error_msg=error, DB_PATH=LOG_DB_PATH)
                 continue
             dataset = args.model_id.split('_')[0]
             folder_path = f'./results_{args.task_name}ing/results/{dataset}/{setting}/'
@@ -275,15 +284,16 @@ if __name__ == '__main__':
                 try:
                     args.logger.info('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
                     exp.train(setting)
-                    
                     args.logger.info('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-                    exp.test(setting)
+                    mertics_string = exp.test(setting)
+                    max_mem = monitor.stop()
+                    log_end(setting, result_metric=mertics_string, max_gpu_mem=max_mem, error_msg=None, DB_PATH=LOG_DB_PATH)
                 except Exception as error:
                     args.logger.info(f'Error when fitting the setting: {setting}, error: {error}')
-
+                    log_end(setting, None, None, error_msg=error, DB_PATH=LOG_DB_PATH)
                 torch.cuda.empty_cache()
             else:
-                args.logger.info(f'The results already exist! skip...')
+                args.logger.info(f'Warning: The results already exist! skip...')
     else:
         ii = 0
         setting = setting_generator(args, ii)
@@ -297,7 +307,9 @@ if __name__ == '__main__':
                 exp = Exp(args)  # set experiments
             except Exception as error:
                 args.logger.info(f'Error when initializing the experiment: {setting}, error: {error}')
-            exp.test(setting, test=1)
+            mertics_string = exp.test(setting, test=1)
+            max_mem = monitor.stop()
+            log_end(setting, result_metric=mertics_string, max_gpu_mem=max_mem, error_msg=None, DB_PATH=LOG_DB_PATH)
             torch.cuda.empty_cache()
         else:
-            args.logger.info(f'The results already exist! skip...')
+            args.logger.info(f'Warning: The results already exist! skip...')

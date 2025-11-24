@@ -128,10 +128,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     train_loss.append(loss.item())
 
                     if (i + 1) % 100 == 0:
-                        self.logger.info("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                        print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
                         speed = (time.time() - time_now) / iter_count
                         left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                        self.logger.info('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                        print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
                         iter_count = 0
                         time_now = time.time()
 
@@ -139,15 +139,15 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     model_optim.step()
 
                 epoch_time_avg.append(time.time() - epoch_time)
-                self.logger.info("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
                 train_loss = np.average(train_loss)
                 vali_loss = self.vali(train_loader, vali_loader, criterion)
                 test_loss = vali_loss
-                self.logger.info("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
                 early_stopping(vali_loss, self.model, path)
                 if early_stopping.early_stop:
-                    self.logger.info("Early stopping")
+                    print("Early stopping")
                     break
 
                 adjust_learning_rate(model_optim, epoch + 1, self.args)
@@ -198,7 +198,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         checkpoint_path = f'./checkpoints{self.save_suffix}/' + setting
         if test:
-            self.logger.info('loading model')
+            print('loading model')
             self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
 
         # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
@@ -219,7 +219,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                                                                       dec_inp[id_list[i]:id_list[i + 1]], None)
 
                 if id_list[i] % 1000 == 0:
-                    self.logger.info(id_list[i])
+                    print(id_list[i])
 
             f_dim = -1 if self.args.features == 'MS' else 0
             outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -233,7 +233,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 gt = np.concatenate((x[i, :, 0], trues[i]), axis=0)
                 pd = np.concatenate((x[i, :, 0], preds[i, :, 0]), axis=0)
                 # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
-        self.logger.info('test shape:', preds.shape)
+        self.logger.info(f'test shape: {preds.shape}')
 
         # result save
         dataset = self.args.model_id.split('_')[0]
@@ -268,10 +268,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             m4_summary = M4Summary(folder_path, self.args.root_path)
             # m4_forecast.set_index(m4_winner_forecast.columns[0], inplace=True)
             smape_results, owa_results, mape, mase = m4_summary.evaluate()
-            self.logger.info('smape:', smape_results)
-            self.logger.info('mape:', mape)
-            self.logger.info('mase:', mase)
-            self.logger.info('owa:', owa_results)
+            self.logger.info(f'smape:{smape_results}')
+            self.logger.info(f'mape:{mape}')
+            self.logger.info(f'mase:{mase}')
+            self.logger.info(f'owa:{owa_results}')
 
             # save results
             np.savez_compressed(folder_path + 'metrics.npz',
@@ -290,4 +290,4 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         if os.path.exists(checkpoint_path):
             shutil.rmtree(checkpoint_path)
 
-        return
+        return f"smape:{smape_results}, mape:{mape}, mase:{mase}, owa:{owa_results}"

@@ -154,5 +154,7 @@ meta_learner_cc/*
 nohup.out
 **/*.sh
 log
+logs/
+nohup_logs/
 models/llm
 notebooks/

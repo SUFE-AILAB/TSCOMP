@@ -147,12 +147,13 @@ result_long_term_forecast.txt
 result_anomaly_detection.txt
 run_anylearn.py
 environment.txt
-# scripts/
+scripts/
 meta_learner_cc/*
 *.npz
 *.csv
 nohup.out
 **/*.sh
+*.db
 log
 logs/
 nohup_logs/

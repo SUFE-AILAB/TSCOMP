@@ -20,8 +20,6 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='TimesNet')
 
-
-
     # basic config
     parser.add_argument('--task_name', type=str, required=True, default='long_term_forecast',
                         help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection]')
@@ -183,10 +181,9 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
     # large benchmark log
-    LOG_DB_PATH = f"{args.task_name}_log.db"
+    LOG_DB_PATH = f"{args.task_name}_SOTA_log.db"
     init_db(LOG_DB_PATH)
     monitor = GPUMemoryMonitor()
-    monitor.start()
 
 
     if args.task_name == 'long_term_forecast':
@@ -261,7 +258,7 @@ if __name__ == '__main__':
                 exp = Exp(args)  # set experiments
             except Exception as error:
                 args.logger.info(f'Error when initializing the experiment: {setting}, error: {error}')
-                log_end(setting, None, None, error_msg=error, DB_PATH=LOG_DB_PATH)
+                log_end(setting, None, None, error_msg=str(error), DB_PATH=LOG_DB_PATH)
                 continue
             dataset = args.model_id.split('_')[0]
             folder_path = f'./results_{args.task_name}ing/results/{dataset}/{setting}/'
@@ -282,6 +279,7 @@ if __name__ == '__main__':
             
             if not os.path.exists(folder_path1) and not os.path.exists(folder_path2) and not os.path.exists(folder_pathGym):
                 try:
+                    monitor.start()
                     args.logger.info('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
                     exp.train(setting)
                     args.logger.info('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
@@ -290,7 +288,7 @@ if __name__ == '__main__':
                     log_end(setting, result_metric=mertics_string, max_gpu_mem=max_mem, error_msg=None, DB_PATH=LOG_DB_PATH)
                 except Exception as error:
                     args.logger.info(f'Error when fitting the setting: {setting}, error: {error}')
-                    log_end(setting, None, None, error_msg=error, DB_PATH=LOG_DB_PATH)
+                    log_end(setting, None, None, error_msg=str(error), DB_PATH=LOG_DB_PATH)
                 torch.cuda.empty_cache()
             else:
                 args.logger.info(f'Warning: The results already exist! skip...')
@@ -307,6 +305,7 @@ if __name__ == '__main__':
                 exp = Exp(args)  # set experiments
             except Exception as error:
                 args.logger.info(f'Error when initializing the experiment: {setting}, error: {error}')
+            monitor.start()
             mertics_string = exp.test(setting, test=1)
             max_mem = monitor.stop()
             log_end(setting, result_metric=mertics_string, max_gpu_mem=max_mem, error_msg=None, DB_PATH=LOG_DB_PATH)

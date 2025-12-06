@@ -181,7 +181,7 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
     # large benchmark log
-    LOG_DB_PATH = f"{args.task_name}_SOTA_log.db"
+    LOG_DB_PATH = f"{args.task_name}_TSGym_transformer_log.db"
     init_db(LOG_DB_PATH)
     monitor = GPUMemoryMonitor()
 

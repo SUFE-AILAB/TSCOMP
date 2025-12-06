@@ -159,3 +159,5 @@ logs/
 nohup_logs/
 models/llm
 notebooks/
+plots_multivariate/
+synthetic_series_multivariate/

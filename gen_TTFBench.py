@@ -281,7 +281,7 @@ def generate_complex_nonlinear_signal(
     signal = scale_factor * signal + shift_offset
     return signal
 
-def sample_hyperparameters(col, rng, data_stats, test_len, signal_profile=None):
+def sample_hyperparameters(col, rng, data_stats, test_len, signal_profile=None, mode="mixed", intensity=1.0):
     """
     Sample data-informed (and optionally profile-aware) hyperparameters for synthetic perturbation.
     Enhanced with logic for flat signals, outlier-dominated channels, and more.
@@ -335,7 +335,7 @@ def sample_hyperparameters(col, rng, data_stats, test_len, signal_profile=None):
         drift = signal_profile["has_drift"]
         outlier = signal_profile.get("is_outlier_dominated", 0.0)
 
-        if flat > 0.9 or outlier > 0.9:
+        if flat > 0.9 or outlier > 0.9 and mode == "mixed":
             # Very flat or outlier-driven signals → avoid noise-like or smooth perturbations
             coeff_range = (0.0, 0.0)
             sin_amp_range = (0.0, 0.0)
@@ -346,7 +346,7 @@ def sample_hyperparameters(col, rng, data_stats, test_len, signal_profile=None):
             regime_shift_range = (0.0, 0.0)
             signal_std_fraction = 0.0  # <<< this is key
             noise_std = 0.5  # <<< also disable noise
-        else:
+        elif mode == "mixed":
             # Adaptive scaling for regular signals
             coeff_range = (
                 coeff_range[0] * trend,
@@ -372,6 +372,29 @@ def sample_hyperparameters(col, rng, data_stats, test_len, signal_profile=None):
         shift_offset = rng.uniform(-0.5, 0.5) * stats["mean"]
         scale_factor = rng.uniform(0.8, 1.2)
 
+    # ------ Mode & Intensity Overrides ------
+    if mode == "noise":
+        num_segments = 0      # 禁用趋势 -> 保留原趋势
+        num_sinusoids = 0     # 禁用季节性 -> 保留原季节性
+        num_regime_shifts = 0 # 禁用突变
+    elif mode == "trend":
+        num_sinusoids = 0
+        num_regime_shifts = 0
+        noise_std = 0
+        if num_segments == 0: num_segments = 2
+    elif mode == "seasonality":
+        num_segments = 0
+        num_regime_shifts = 0
+        noise_std = 0
+        if num_sinusoids == 0: num_sinusoids = 1
+    elif mode == "shift":
+        num_segments = 0
+        num_sinusoids = 0
+        noise_std = 0
+        if num_regime_shifts == 0: num_regime_shifts = 1
+    # 根据强度缩放扰动幅度
+    signal_std_fraction *= intensity
+
     return {
         "num_segments": num_segments,
         "poly_degree": poly_degree,
@@ -387,347 +410,391 @@ def sample_hyperparameters(col, rng, data_stats, test_len, signal_profile=None):
         "shift_offset": shift_offset
     }
 
+
 # =============================================================================
 # Main Code: Multivariate Perturbations with Preservation of Inter-Channel Relationships
 # =============================================================================
-# dataset = "weather"
-# dataset = "ETTh2"
-dataset = "exchange_rate"
-N_SAMPLES = 1000
 
-# --------------------------
-# (A) Directories for Outputs
-# --------------------------
-ROOT_DIR = "/data/nishome/user1/chaochuan/TSGym_benchmark/" #"/ingenuity_NAS/23bx19_nas/23bx19_mount/TTFBench/"
-CSV_SAVE_DIR = f"{ROOT_DIR}/synthetic_series_multivariate/{dataset}"
-PLOTS_SAVE_DIR = f"{ROOT_DIR}/plots_multivariate/{dataset}"
-os.makedirs(CSV_SAVE_DIR, exist_ok=True)
-os.makedirs(PLOTS_SAVE_DIR, exist_ok=True)
-
-# --------------------------
-# (B) Load and Clean the Data
-# --------------------------
-csv_path = f"dataset/exchange_rate/{dataset}.csv"# f"data/{dataset}.csv"  # Adjust path as needed.
-df = pd.read_csv(csv_path, parse_dates=["date"])
-df.set_index("date", inplace=True)
-
-# For this example, we assume that outliers are marked as -9999 in any column.
-# Clean all columns by replacing -9999 with NaN then interpolating.
-clean_df = df.replace(-9999, np.nan).interpolate(method="linear").ffill().bfill()
-
-# --------------------------
-# (C) Normalize Each Channel Separately
-# --------------------------
-channels = clean_df.columns.tolist()
-norm_data = {}  # store normalized series for each channel
-stats = {}      # store mean and std for each channel
-
-for col in channels:
-    series = clean_df[col].values
-    mean_val = np.mean(series)
-    std_val = np.std(series)
-    if std_val < 1e-12:
-        std_val = 1e-12
-    stats[col] = {"mean": mean_val, "std": std_val}
-    norm_data[col] = (series - mean_val) / std_val
-
-# Convert the normalized data dictionary into a DataFrame (columns preserved)
-norm_df = pd.DataFrame(norm_data, index=clean_df.index)
-
-# --------------------------
-# (D) Define Split Indices (Train, Validation, Test)
-# --------------------------
-n = len(norm_df) # TODO
-train_len = int(n * 0.7)
-test_len  = int(n * 0.2)
-val_len   = n - train_len - test_len
-train_end = train_len
-val_end   = train_len + val_len  # Test split: indices [val_end, n)
-
-# --------------------------
-# (E) Generate Multivariate Perturbations
-# --------------------------
-global_rng = np.random.default_rng(1234)  # For reproducibility
-
-channel_corr = clean_df.corr()
-avg_corr_sign = {}  # stores sign(ρ̄(c)) per channel
-for col in channels:
-    corrs = [channel_corr[col][other] for other in channels if other != col]
-    avg_corr = np.mean(corrs)
-    avg_corr_sign[col] = np.sign(avg_corr) if not np.isnan(avg_corr) else 0.0
-
-data_stats = build_data_stats(norm_df, train_end, channels)
-data_stats_global = build_global_stats(data_stats, channels)
-
-# Decide on the common component flag: with some probability, add a common perturbation.
-# (This common component will be the same for all channels.)
-p_common = 0.5  # 50% chance that a common perturbation is added.
-
-channel_profiles = {}
-for col in channels:
-    train_series = norm_df[col].values[:train_end]
-    channel_profiles[col] = profile_signal(train_series, col)
-
-for sample_idx in range(N_SAMPLES):
-    # Decide whether to include a common component in this sample.
-    use_common = global_rng.random() < p_common
+def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, output_subdir=None):
+    print(f"Generating dataset: {dataset_name}, Mode: {mode}, Intensity: {intensity}")
     
-    if use_common:
-        # Sample hyperparameters for the common component.
-        common_params = sample_hyperparameters(
-            col="__global__",  # or any placeholder
-            rng=global_rng,
-            data_stats={"__global__": data_stats_global},
-            test_len=(n - val_end)
-        )
-        # Generate common perturbation ONLY for the test split.
-        common_raw = generate_complex_nonlinear_signal(
-            length=(n - val_end),
-            num_segments=common_params["num_segments"],
-            poly_degree=common_params["poly_degree"],
-            num_sinusoids=common_params["num_sinusoids"],
-            sin_amp_range=common_params["sin_amp_range"],
-            sin_freq_range=common_params["sin_freq_range"],
-            num_regime_shifts=common_params["num_regime_shifts"],
-            regime_shift_range=common_params["regime_shift_range"],
-            noise_std=common_params["noise_std"],
-            coeff_range=common_params["coeff_range"],
-            random_state=global_rng.integers(0, 10_000_000)
-        )
-        # Scale the common perturbation based on its standard deviation.
-        common_std = np.std(common_raw)
-        # (Since the normalized series is roughly unit std, use the fraction directly.)
-        if common_std > 0:
-            desired_common_std = common_params["signal_std_fraction"]
-            scale_common = desired_common_std / common_std
-            common_component = common_raw * scale_common
-        else:
-            common_component = common_raw
-        # Sample a common weight factor (how strongly the common perturbation affects each channel)
-        weight_common = global_rng.uniform(0, 1.0)
+    # --------------------------
+    # (B) Load and Clean the Data
+    # --------------------------
+    # Determine dataset path based on name
+    if 'ETT' in dataset_name:
+        root_path = 'ETT-small'
+    elif 'M4' in dataset_name:
+        root_path = 'm4'
+    elif dataset_name == 'ili':
+        root_path = 'illness'
     else:
-        common_component = np.zeros(n - val_end)
-        weight_common = 0.0
+        root_path = dataset_name
+        
+    data_file_name = 'national_illness' if dataset_name == 'ili' else dataset_name
+    csv_path = f"dataset/{root_path}/{data_file_name}.csv"
 
-    # Prepare a dictionary to store perturbed channels.
-    perturbed_channels = {}
-    raw_indep_all = {}
-    channel_params_dict = {}
-
+    # --------------------------
+    # (A) Directories for Outputs
+    # --------------------------
+    ROOT_DIR = "./dataset/"
     
-    # For each channel, generate an independent perturbation using data-informed hyperparameters
+    # Save in the same folder as csv_path
+    CSV_SAVE_DIR = os.path.dirname(csv_path)
+    
+    if output_subdir:
+        PLOTS_SAVE_DIR = f"{ROOT_DIR}/plots_multivariate/{dataset_name}/{output_subdir}"
+    else:
+        PLOTS_SAVE_DIR = f"{ROOT_DIR}/plots_multivariate/{dataset_name}"
+    
+    os.makedirs(CSV_SAVE_DIR, exist_ok=True)
+    os.makedirs(PLOTS_SAVE_DIR, exist_ok=True)
+
+    df = pd.read_csv(csv_path, parse_dates=["date"])
+    df.set_index("date", inplace=True)
+    # For this example, we assume that outliers are marked as -9999 in any column.
+    # Clean all columns by replacing -9999 with NaN then interpolating.
+    clean_df = df.replace(-9999, np.nan).interpolate(method="linear").ffill().bfill()
+
+    channels = clean_df.columns.tolist()
+    norm_data = {}# store normalized series for each channel
+    stats = {}# store mean and std for each channel
+
     for col in channels:
-        series = norm_df[col].values[:train_end]
-        profile = channel_profiles[col]
+        series = clean_df[col].values
+        mean_val = np.mean(series)
+        std_val = np.std(series)
+        if std_val < 1e-12: std_val = 1e-12
+        stats[col] = {"mean": mean_val, "std": std_val}
+        norm_data[col] = (series - mean_val) / std_val
+    # Convert the normalized data dictionary into a DataFrame (columns preserved)
+    norm_df = pd.DataFrame(norm_data, index=clean_df.index)
 
-        # Sample channel-specific perturbation settings (with profile override)
-        channel_params = sample_hyperparameters(
-            col=col,
-            rng=global_rng,
-            data_stats=data_stats,
-            test_len=(n - val_end),
-            signal_profile=profile
-        )
-        channel_params_dict[col] = channel_params
+    # --------------------------
+    # (D) Define Split Indices (Train, Validation, Test)
+    # --------------------------
+    n = len(norm_df)
+    # Split logic based on dataset type
+    db_type = dataset_name
+    if db_type in ['weather', 'electricity', 'traffic']:
+        num_train = int(n * 0.7)
+        num_test = int(n * 0.2)
+        num_vali = n - num_train - num_test
+        train_end = num_train
+        val_end = num_train + num_vali
+    elif db_type in ['ETTh', 'ETTh1', 'ETTh2']:
+        train_end = 12 * 30 * 24
+        val_end = 12 * 30 * 24 + 4 * 30 * 24
+    elif db_type in ['ETTm', 'ETTm1', 'ETTm2']:
+        train_end = 12 * 30 * 24 * 4
+        val_end = 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4
+    elif db_type == 'PEMS':
+        num_train = int(n * 0.6)
+        num_test = int(n * 0.2)
+        num_vali = n - num_train - num_test
+        train_end = num_train
+        val_end = num_train + num_vali
+    else:
+        num_train = int(n * 0.7)
+        num_test = int(n * 0.2)
+        num_vali = n - num_train - num_test
+        train_end = num_train
+        val_end = num_train + num_vali
+    # --------------------------
+    # (E) Generate Multivariate Perturbations
+    # --------------------------
+    global_rng = np.random.default_rng(1234)  # For reproducibility
 
-        # Generate independent perturbation
-        raw_indep = generate_complex_nonlinear_signal(
-            length=(n - val_end),
-            num_segments=channel_params["num_segments"],
-            poly_degree=channel_params["poly_degree"],
-            num_sinusoids=channel_params["num_sinusoids"],
-            sin_amp_range=channel_params["sin_amp_range"],
-            sin_freq_range=channel_params["sin_freq_range"],
-            num_regime_shifts=channel_params["num_regime_shifts"],
-            regime_shift_range=channel_params["regime_shift_range"],
-            noise_std=channel_params["noise_std"],
-            coeff_range=channel_params["coeff_range"],
-            random_state=global_rng.integers(0, 10_000_000),
-            shift_offset=channel_params["shift_offset"],
-            scale_factor=channel_params["scale_factor"]
-        )
+    channel_corr = clean_df.corr()
+    avg_corr_sign = {}  # stores sign(ρ̄(c)) per channel
+    for col in channels:
+        corrs = [channel_corr[col][other] for other in channels if other != col]
+        avg_corr = np.mean(corrs)
+        avg_corr_sign[col] = np.sign(avg_corr) if not np.isnan(avg_corr) else 0.0
 
-        # Rescale
-        channel_std = np.std(raw_indep)
-        if channel_std > 0:
-            target_std = channel_params["signal_std_fraction"]
-            indep_component = raw_indep * (target_std / channel_std)
+    data_stats = build_data_stats(norm_df, train_end, channels)
+    data_stats_global = build_global_stats(data_stats, channels)
+
+    # Decide on the common component flag: with some probability, add a common perturbation.
+    # (This common component will be the same for all channels.)
+    p_common = 0.5  # 50% chance that a common perturbation is added.
+    channel_profiles = {}
+    for col in channels:
+        train_series = norm_df[col].values[:train_end]
+        channel_profiles[col] = profile_signal(train_series, col)
+
+    for sample_idx in range(n_samples):
+        # Decide whether to include a common component in this sample.
+        use_common = global_rng.random() < p_common
+        
+        if use_common:
+            # Sample hyperparameters for the common component.
+            common_params = sample_hyperparameters(
+                col="__global__",  # or any placeholder
+                rng=global_rng,
+                data_stats={"__global__": data_stats_global},
+                test_len=(n - val_end),
+                mode=mode,
+                intensity=intensity
+            )
+            # Generate common perturbation ONLY for the test split.
+            common_raw = generate_complex_nonlinear_signal(
+                length=(n - val_end),
+                num_segments=common_params["num_segments"],
+                poly_degree=common_params["poly_degree"],
+                num_sinusoids=common_params["num_sinusoids"],
+                sin_amp_range=common_params["sin_amp_range"],
+                sin_freq_range=common_params["sin_freq_range"],
+                num_regime_shifts=common_params["num_regime_shifts"],
+                regime_shift_range=common_params["regime_shift_range"],
+                noise_std=common_params["noise_std"],
+                coeff_range=common_params["coeff_range"],
+                random_state=global_rng.integers(0, 10_000_000)
+            )
+            # Scale the common perturbation based on its standard deviation.
+            common_std = np.std(common_raw)
+            # (Since the normalized series is roughly unit std, use the fraction directly.)
+            if common_std > 0:
+                desired_common_std = common_params["signal_std_fraction"]
+                scale_common = desired_common_std / common_std
+                common_component = common_raw * scale_common
+            else:
+                common_component = common_raw
+            # Sample a common weight factor (how strongly the common perturbation affects each channel)
+            weight_common = global_rng.uniform(0, 1.0)
         else:
-            indep_component = raw_indep
+            common_component = np.zeros(n - val_end)
+            weight_common = 0.0
+        # Prepare a dictionary to store perturbed channels.
+        perturbed_channels = {}
+        raw_indep_all = {}
+        channel_params_dict = {}
+        # For each channel, generate an independent perturbation using data-informed hyperparameters
+        for col in channels:
+            series = norm_df[col].values[:train_end]
+            profile = channel_profiles[col]
 
-        # Combine with global
-        is_flat = profile.get("is_flat", 0.0)
-        is_outlier = profile.get("is_outlier_dominated", 0.0)
+            # Sample channel-specific perturbation settings (with profile override)
+            channel_params = sample_hyperparameters(
+                col=col,
+                rng=global_rng,
+                data_stats=data_stats,
+                test_len=(n - val_end),
+                signal_profile=profile,
+                mode=mode,
+                intensity=intensity
+            )
+            channel_params_dict[col] = channel_params
+            # Generate independent perturbation
+            raw_indep = generate_complex_nonlinear_signal(
+                length=(n - val_end),
+                num_segments=channel_params["num_segments"],
+                poly_degree=channel_params["poly_degree"],
+                num_sinusoids=channel_params["num_sinusoids"],
+                sin_amp_range=channel_params["sin_amp_range"],
+                sin_freq_range=channel_params["sin_freq_range"],
+                num_regime_shifts=channel_params["num_regime_shifts"],
+                regime_shift_range=channel_params["regime_shift_range"],
+                noise_std=channel_params["noise_std"],
+                coeff_range=channel_params["coeff_range"],
+                random_state=global_rng.integers(0, 10_000_000),
+                shift_offset=channel_params["shift_offset"],
+                scale_factor=channel_params["scale_factor"]
+            )
+            # Rescale
+            channel_std = np.std(raw_indep)
+            if channel_std > 0:
+                target_std = channel_params["signal_std_fraction"]
+                indep_component = raw_indep * (target_std / channel_std)
+            else:
+                indep_component = raw_indep
+            # Combine with global
+            is_flat = profile.get("is_flat", 0.0)
+            is_outlier = profile.get("is_outlier_dominated", 0.0)
 
-        adjusted_weight_common = weight_common
-        abs_corr = abs(avg_corr_sign[col])
-        adjusted_weight_common *= abs_corr
-        if is_flat > 0.8 or is_outlier > 0.9:
-            adjusted_weight_common *= 0.1  # suppress common influence
+            adjusted_weight_common = weight_common
+            abs_corr = abs(avg_corr_sign[col])
+            adjusted_weight_common *= abs_corr
+            if is_flat > 0.8 or is_outlier > 0.9:
+                adjusted_weight_common *= 0.1  # suppress common influence
 
-        weight_indep = global_rng.uniform(0.4, 1.0)
-        adjusted_weight_common = np.clip(adjusted_weight_common, 0.0, 1.0)
+            weight_indep = global_rng.uniform(0.4, 1.0)
+            adjusted_weight_common = np.clip(adjusted_weight_common, 0.0, 1.0)
 
-        signed_common = avg_corr_sign[col] * common_component
-        total_perturbation = adjusted_weight_common * signed_common + weight_indep * indep_component
-        total_perturbation -= total_perturbation[0]  # start from 0
+            signed_common = avg_corr_sign[col] * common_component
+            total_perturbation = adjusted_weight_common * signed_common + weight_indep * indep_component
+            total_perturbation -= total_perturbation[0]  # start from 0
+            # Apply to full signal (only test portion)
+            full_perturbation = np.zeros(n)
+            full_perturbation[val_end:] = total_perturbation
+            # Apply in normalized space
+            perturbed_norm = norm_df[col].values + full_perturbation
+            # Denormalize
+            perturbed_channel = perturbed_norm * stats[col]["std"] + stats[col]["mean"]
+            perturbed_channels[col] = perturbed_channel
+            raw_indep_all[col] = full_perturbation
 
-        # Apply to full signal (only test portion)
-        full_perturbation = np.zeros(n)
-        full_perturbation[val_end:] = total_perturbation
+        result_df = pd.DataFrame(perturbed_channels, index=clean_df.index)
+        
+        if output_subdir:
+            suffix = output_subdir
+        else:
+            suffix = mode
+            
+        csv_filename = os.path.join(CSV_SAVE_DIR, f"{data_file_name}_{suffix}_{sample_idx:03d}.csv")
+        result_df.to_csv(csv_filename, index_label="date")
+        
+        if sample_idx % 5 == 0:
+            print(f"Saved {sample_idx}...")
 
-        # Apply in normalized space
-        perturbed_norm = norm_df[col].values + full_perturbation
+            x = np.arange(n)
+            # Common settings
+            TITLE_FS = 18
+            TICK_FS = 14
+            LABEL_FS = 18
+            CBAR_FS = 14
 
-        # Denormalize
-        perturbed_channel = perturbed_norm * stats[col]["std"] + stats[col]["mean"]
-        perturbed_channels[col] = perturbed_channel
-        raw_indep_all[col] = full_perturbation
+            # Only plot a subset if too many channels
+            plot_channels = channels[-10:] if len(channels) > 10 else channels
+            n_channels = len(plot_channels)
+            fig, axes = plt.subplots(n_channels, 1, figsize=(12, 3 * n_channels), sharex=True)
+            if n_channels == 1:
+                axes = [axes]
 
-    result_df = pd.DataFrame(perturbed_channels, index=clean_df.index)
-    # Also add a column for one channel's original values (for inspection) if desired.
-    # Here we keep the original cleaned data in a separate DataFrame.
+            for idx, col in enumerate(plot_channels):
+                ax = axes[idx]
+                l1, = ax.plot(x, clean_df[col].values, label="Original", color="red")
+                l2, = ax.plot(x[val_end:], result_df[col].values[val_end:], label="Perturbed", linestyle="--", color="blue")
+                l3, = ax.plot(x[val_end:], clean_df[col].values[val_end:], label="Original Test", alpha=0.34, color="red")
+                ax.axvline(train_end, color='green', linestyle='--')
+                ax.axvline(val_end, color='red', linestyle='--')
 
-    csv_filename = os.path.join(CSV_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}.csv")
-    result_df.to_csv(csv_filename, index_label="date")
-    
-    if sample_idx%10==0:
-        x = np.arange(n)
+                ax.tick_params(axis='both', which='major', labelsize=14)
+                ax.set_ylabel("Value", fontsize=18)
+                # ax.legend(fontsize=14)
+                ax.set_title(f"Channel: {col}", fontsize=18, loc='left')
 
-        # Common settings
-        TITLE_FS = 18
-        TICK_FS = 14
-        LABEL_FS = 18
-        CBAR_FS = 14
+                # --- Annotate channel with analysis & perturbation summary ---
+                profile = channel_profiles[col]          # e.g., {"has_trend": 0.6, ...}
+                params = channel_params_dict[col]        # e.g., returned by sample_hyperparameters
 
-        # Only plot a subset if too many channels
-        plot_channels = channels[-10:] if len(channels) > 10 else channels
-        n_channels = len(plot_channels)
-        fig, axes = plt.subplots(n_channels, 1, figsize=(12, 3 * n_channels), sharex=True)
-        if n_channels == 1:
-            axes = [axes]
+                profile_str = ", ".join([f"{k}:{v:.2f}" for k, v in profile.items()])
+                perturb_str = f"TrendCoef:({params['coeff_range'][0]:.3f},{params['coeff_range'][1]:.3f}), " \
+                            f"SinAmp:({params['sin_amp_range'][0]:.3f},{params['sin_amp_range'][1]:.3f}), " \
+                            f"RegimeShifts:{params['num_regime_shifts']}, " \
+                            f"SignalSTD:{params['signal_std_fraction']:.3f}"
 
-        for idx, col in enumerate(plot_channels):
-            ax = axes[idx]
-            l1, = ax.plot(x, clean_df[col].values, label="Original", color="red")
-            l2, = ax.plot(x[val_end:], result_df[col].values[val_end:], label="Perturbed", linestyle="--", color="blue")
-            l3, = ax.plot(x[val_end:], clean_df[col].values[val_end:], label="Original Test", alpha=0.34, color="red")
-            ax.axvline(train_end, color='green', linestyle='--')
-            ax.axvline(val_end, color='red', linestyle='--')
-
-            ax.tick_params(axis='both', which='major', labelsize=14)
-            ax.set_ylabel("Value", fontsize=18)
-            # ax.legend(fontsize=14)
-            ax.set_title(f"Channel: {col}", fontsize=18, loc='left')
-
-            # --- Annotate channel with analysis & perturbation summary ---
-            profile = channel_profiles[col]          # e.g., {"has_trend": 0.6, ...}
-            params = channel_params_dict[col]        # e.g., returned by sample_hyperparameters
-
-            profile_str = ", ".join([f"{k}:{v:.2f}" for k, v in profile.items()])
-            perturb_str = f"TrendCoef:({params['coeff_range'][0]:.3f},{params['coeff_range'][1]:.3f}), " \
-                        f"SinAmp:({params['sin_amp_range'][0]:.3f},{params['sin_amp_range'][1]:.3f}), " \
-                        f"RegimeShifts:{params['num_regime_shifts']}, " \
-                        f"SignalSTD:{params['signal_std_fraction']:.3f}"
-
-            # axes[idx].set_title(f"Channel: {col}\nProfile: [{profile_str}]\nSettings: [{perturb_str}]", fontsize=10)
-            # axes[idx].set_ylabel("Value", fontsize=14)
-            # axes[idx].legend(fontsize=14)
-        fig.legend(
-            handles=[l1, l2, l3],
-            labels=["Original", "Perturbed", "Original Test"],
-            loc="upper center",
-            ncol=3,
-            fontsize=18,
-            bbox_to_anchor=(0.5, 0.99)
-        )
-        axes[-1].set_xlabel("Time Step", fontsize=18)
-        plot_filename = os.path.join(PLOTS_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}.pdf")
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-        plt.tight_layout(rect=[0, 0, 1, 0.97])
-        plt.savefig(plot_filename, dpi=150)
-        plt.savefig(plot_filename.replace("pdf", "png"), dpi=150)
-        plt.close()
-
-
-        # ----------------------------
-        # Plot 2: Synthetic (Non-linear) Perturbation Signals per Channel.
-        # ----------------------------
-        fig, axes = plt.subplots(n_channels, 1, figsize=(12, 3 * n_channels), sharex=True)
-        if n_channels == 1:
-            axes = [axes]
-        for idx, col in enumerate(plot_channels):
-            ax = axes[idx]
-            ax.plot(x, raw_indep_all[col], color="blue")
-            ax.axvline(train_end, color='green', linestyle='--')
-            ax.axvline(val_end, color='red', linestyle='--')
-            ax.set_title(f"Channel: {col}", fontsize=18, loc='left')
-            ax.set_ylabel("Perturbation", fontsize=18)
-            ax.tick_params(axis='both', which='major', labelsize=14)
-            ax.legend(fontsize=14)
-        axes[-1].set_xlabel("Time Index", fontsize=18)
-        plot_filename_synth = os.path.join(PLOTS_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}_guide_signals.pdf")
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-        plt.tight_layout()
-        plt.savefig(plot_filename_synth, dpi=150)
-        plt.savefig(plot_filename_synth.replace("pdf", "png"), dpi=150)
-        plt.close()
-
-        # ----------------------------
-        # Correlation Analysis: Save correlations among channels before and after perturbation as a single image.
-        # ----------------------------
-        corr_before = clean_df.corr()
-        corr_after = result_df.corr()
+                # axes[idx].set_title(f"Channel: {col}\nProfile: [{profile_str}]\nSettings: [{perturb_str}]", fontsize=10)
+                # axes[idx].set_ylabel("Value", fontsize=14)
+                # axes[idx].legend(fontsize=14)
+            fig.legend(
+                handles=[l1, l2, l3],
+                labels=["Original", "Perturbed", "Original Test"],
+                loc="upper center",
+                ncol=3,
+                fontsize=18,
+                bbox_to_anchor=(0.5, 0.99)
+            )
+            axes[-1].set_xlabel("Time Step", fontsize=18)
+            plot_filename = os.path.join(PLOTS_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}.pdf")
+            plt.xticks(fontsize=14)
+            plt.yticks(fontsize=14)
+            plt.tight_layout(rect=[0, 0, 1, 0.97])
+            # plt.savefig(plot_filename, dpi=150)
+            plt.savefig(plot_filename.replace("pdf", "png"), dpi=150)
+            plt.close()
 
 
+            # ----------------------------
+            # Plot 2: Synthetic (Non-linear) Perturbation Signals per Channel.
+            # ----------------------------
+            fig, axes = plt.subplots(n_channels, 1, figsize=(12, 3 * n_channels), sharex=True)
+            if n_channels == 1:
+                axes = [axes]
+            for idx, col in enumerate(plot_channels):
+                ax = axes[idx]
+                ax.plot(x, raw_indep_all[col], color="blue")
+                ax.axvline(train_end, color='green', linestyle='--')
+                ax.axvline(val_end, color='red', linestyle='--')
+                ax.set_title(f"Channel: {col}", fontsize=18, loc='left')
+                ax.set_ylabel("Perturbation", fontsize=18)
+                ax.tick_params(axis='both', which='major', labelsize=14)
+                ax.legend(fontsize=14)
+            axes[-1].set_xlabel("Time Index", fontsize=18)
+            plot_filename_synth = os.path.join(PLOTS_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}_guide_signals.pdf")
+            plt.xticks(fontsize=14)
+            plt.yticks(fontsize=14)
+            plt.tight_layout()
+            # plt.savefig(plot_filename_synth, dpi=150)
+            plt.savefig(plot_filename_synth.replace("pdf", "png"), dpi=150)
+            plt.close()
+
+            # ----------------------------
+            # Correlation Analysis: Save correlations among channels before and after perturbation as a single image.
+            # ----------------------------
+            corr_before = clean_df.corr()
+            corr_after = result_df.corr()
+
+            # Define larger font sizes
+            TITLE_FS = 24
+            LABEL_FS = 20
+            TICK_FS = 18
+            CBAR_FS = 18
+
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+            # Reduce space between subplots
+            plt.subplots_adjust(wspace=0.2)
+
+            # # Plot 1: Correlation Matrix Before Perturbation
+            # cax1 = ax1.imshow(corr_before, interpolation="nearest", cmap="coolwarm", vmin=-1, vmax=1)
+            # ax1.set_title("Correlations Before Perturbation", fontsize=TITLE_FS)
+            # ax1.set_xticks(np.arange(len(corr_before.columns)))
+            # ax1.set_yticks(np.arange(len(corr_before.index)))
+            # ax1.set_xticklabels(corr_before.columns, fontsize=TICK_FS, rotation=90)
+            # ax1.set_yticklabels(corr_before.index, fontsize=TICK_FS)
+            # ax1.tick_params(axis='both', which='major', labelsize=TICK_FS)
+
+            # cbar1 = fig.colorbar(cax1, ax=ax1, fraction=0.046, pad=0.04)
+            # cbar1.set_label("Correlation", fontsize=LABEL_FS)
+            # cbar1.ax.tick_params(labelsize=CBAR_FS)
+
+            # # Plot 2: Correlation Matrix After Perturbation
+            # cax2 = ax2.imshow(corr_after, interpolation="nearest", cmap="coolwarm", vmin=-1, vmax=1)
+            # ax2.set_title("Correlations After Perturbation", fontsize=TITLE_FS)
+            # ax2.set_xticks(np.arange(len(corr_after.columns)))
+            # ax2.set_yticks(np.arange(len(corr_after.index)))
+            # ax2.set_xticklabels(corr_after.columns, fontsize=TICK_FS, rotation=90)
+            # ax2.set_yticklabels(corr_after.index, fontsize=TICK_FS)
+            # ax2.tick_params(axis='both', which='major', labelsize=TICK_FS)
+
+            # cbar2 = fig.colorbar(cax2, ax=ax2, fraction=0.046, pad=0.04)
+            # cbar2.set_label("Correlation", fontsize=LABEL_FS)
+            # cbar2.ax.tick_params(labelsize=CBAR_FS)
+
+            # # Save the combined figure
+            # combined_corr_filename = os.path.join(PLOTS_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}_correlation.pdf")
+            # plt.tight_layout()
+            # plt.savefig(combined_corr_filename, bbox_inches="tight", dpi=150)
+            # plt.savefig(combined_corr_filename.replace("pdf", "png"), bbox_inches="tight", dpi=150)
+            # plt.close()
 
 
-        # Define larger font sizes
-        TITLE_FS = 24
-        LABEL_FS = 20
-        TICK_FS = 18
-        CBAR_FS = 18
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-        # Reduce space between subplots
-        plt.subplots_adjust(wspace=0.2)
-
-        # # Plot 1: Correlation Matrix Before Perturbation
-        # cax1 = ax1.imshow(corr_before, interpolation="nearest", cmap="coolwarm", vmin=-1, vmax=1)
-        # ax1.set_title("Correlations Before Perturbation", fontsize=TITLE_FS)
-        # ax1.set_xticks(np.arange(len(corr_before.columns)))
-        # ax1.set_yticks(np.arange(len(corr_before.index)))
-        # ax1.set_xticklabels(corr_before.columns, fontsize=TICK_FS, rotation=90)
-        # ax1.set_yticklabels(corr_before.index, fontsize=TICK_FS)
-        # ax1.tick_params(axis='both', which='major', labelsize=TICK_FS)
-
-        # cbar1 = fig.colorbar(cax1, ax=ax1, fraction=0.046, pad=0.04)
-        # cbar1.set_label("Correlation", fontsize=LABEL_FS)
-        # cbar1.ax.tick_params(labelsize=CBAR_FS)
-
-        # # Plot 2: Correlation Matrix After Perturbation
-        # cax2 = ax2.imshow(corr_after, interpolation="nearest", cmap="coolwarm", vmin=-1, vmax=1)
-        # ax2.set_title("Correlations After Perturbation", fontsize=TITLE_FS)
-        # ax2.set_xticks(np.arange(len(corr_after.columns)))
-        # ax2.set_yticks(np.arange(len(corr_after.index)))
-        # ax2.set_xticklabels(corr_after.columns, fontsize=TICK_FS, rotation=90)
-        # ax2.set_yticklabels(corr_after.index, fontsize=TICK_FS)
-        # ax2.tick_params(axis='both', which='major', labelsize=TICK_FS)
-
-        # cbar2 = fig.colorbar(cax2, ax=ax2, fraction=0.046, pad=0.04)
-        # cbar2.set_label("Correlation", fontsize=LABEL_FS)
-        # cbar2.ax.tick_params(labelsize=CBAR_FS)
-
-        # # Save the combined figure
-        # combined_corr_filename = os.path.join(PLOTS_SAVE_DIR, f"synthetic_multivariate_{sample_idx:03d}_correlation.pdf")
-        # plt.tight_layout()
-        # plt.savefig(combined_corr_filename, bbox_inches="tight", dpi=150)
-        # plt.savefig(combined_corr_filename.replace("pdf", "png"), bbox_inches="tight", dpi=150)
-        # plt.close()
-
-    print(f"Saved multivariate sample {sample_idx:03d} with common perturbation: {use_common}")
-    
-print(f"Finished generating 1000 synthetic multivariate time series with realistic perturbations.")
+if __name__ == "__main__":
+    # Generate specific datasets for testing generalization
+    n_samples = 10
+    for dataset in ["ETTm1", "exchange_rate", "weather", "ETTh1", "ETTh2", "ETTm2"]:
+        generate_dataset(dataset, mode="shift", intensity=1.0, n_samples=n_samples, output_subdir="shift_med")
+        # 1. Noise variations
+        generate_dataset(dataset, mode="noise", intensity=0.5, n_samples=n_samples, output_subdir="noise_low")
+        # generate_dataset(dataset, mode="noise", intensity=1.0, n_samples=n_samples, output_subdir="noise_med")
+        # generate_dataset(dataset, mode="noise", intensity=2.0, n_samples=n_samples, output_subdir="noise_high")
+        
+        # 2. Trend variations
+        generate_dataset(dataset, mode="trend", intensity=1.0, n_samples=n_samples, output_subdir="trend_med")
+        
+        # 3. Seasonality variations
+        generate_dataset(dataset, mode="seasonality", intensity=1.0, n_samples=n_samples, output_subdir="seasonality_med")
+        
+        # 4. Mixed (Original)
+        generate_dataset(dataset, mode="mixed", intensity=1.0, n_samples=n_samples)

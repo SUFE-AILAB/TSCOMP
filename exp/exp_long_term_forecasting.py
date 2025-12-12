@@ -13,6 +13,7 @@ import numpy as np
 from utils.dtw_metric import dtw,accelerated_dtw
 from utils.augmentation import run_augmentation,run_augmentation_single
 import shutil
+import glob
 from utils.losses import MAPELoss, PSLoss, FreDFLoss, DBLoss
 warnings.filterwarnings('ignore')
 
@@ -218,113 +219,141 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return total_loss
 
     def test(self, setting, test=0):
-        test_data, test_loader = self._get_data(flag='test')
+        # 如果没有提供测试文件列表，则默认使用 args.data_path (兼容原有逻辑)
+        original_data_path = self.args.data_path
+        test_file_names = [self.args.data_path]
+
+        perturb_files = glob.glob(os.path.join(self.args.root_path, f'{self.args.data_path.split(".")[0]}_*.csv'))
+        if len(perturb_files) > 0:
+            test_file_names.extend([os.path.basename(f) for f in sorted(perturb_files)])
+
+        # 只需要加载一次模型
         checkpoint_path = f'./checkpoints{self.save_suffix}/' + setting
         if test:
             print('loading model')
             self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
 
-        preds, trues = [], []
-        # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
-        # if not os.path.exists(folder_path):
-        #     os.makedirs(folder_path)
+        test_results = []
 
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
-                # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, -self.args.pred_len:, :]
-                batch_y = batch_y[:, -self.args.pred_len:, :]
-                outputs = outputs.detach().cpu().numpy()
-                batch_y = batch_y.detach().cpu().numpy()
-                if test_data.scale and self.args.inverse:
-                    shape = batch_y.shape
-                    if self.args.features == 'MS':
-                        outputs = np.tile(outputs, [1, 1, batch_y.shape[-1]])
-                    outputs = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
-                    batch_y = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
-        
-                outputs = outputs[:, :, f_dim:]
-                batch_y = batch_y[:, :, f_dim:]
-
-                pred = outputs
-                true = batch_y
-
-                preds.append(pred)
-                trues.append(true)
-                if i % 20 == 0:
-                    input = batch_x.detach().cpu().numpy()
-                    if test_data.scale and self.args.inverse:
-                        shape = input.shape
-                        input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
-                    gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
-                    pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                    # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
-
-        preds = np.concatenate(preds, axis=0)
-        trues = np.concatenate(trues, axis=0)
-        self.logger.info(f'test shape:{preds.shape} {trues.shape}')
-        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
-        trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        self.logger.info(f'test shape:{preds.shape} {trues.shape}')
-
-        # result save
-        dataset = self.args.model_id.split('_')[0]
-        if 'TSGym' in setting:
-            if 'Transformer' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_transformer/{dataset}/' + setting + '/'
-            elif 'LLM' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_LLM/{dataset}/' + setting + '/'
-            elif 'TSFM' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_TSFM/{dataset}/' + setting + '/'
-            else:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_non_transformer/{dataset}/' + setting + '/'
-        else:
-            folder_path = f'./results_long_term_forecasting/results{self.save_suffix}/{dataset}/' + setting + '/'
-
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
-        
-        # dtw calculation
-        if self.args.use_dtw:
-            dtw_list = []
-            manhattan_distance = lambda x, y: np.abs(x - y)
-            for i in range(preds.shape[0]):
-                x = preds[i].reshape(-1,1)
-                y = trues[i].reshape(-1,1)
-                if i % 100 == 0:
-                    self.logger.info(f"calculating dtw iter:{i}")
-                d, _, _, _ = accelerated_dtw(x, y, dist=manhattan_distance)
-                dtw_list.append(d)
-            dtw = np.array(dtw_list).mean()
-        else:
-            dtw = 'not calculated'
+        # 遍历所有测试数据集
+        for test_index, test_file in enumerate(test_file_names):
+            # 临时修改 data_path 以加载不同的测试集
+            self.args.data_path = test_file
+            print(f">>>>>>> Testing on {test_file} <<<<<<<")
             
+            # 获取当前数据集的 loader
+            test_data, test_loader = self._get_data(flag='test')
+            
+            preds, trues = [], []
+            # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
+            # if not os.path.exists(folder_path):
+            #     os.makedirs(folder_path)
 
-        mae, mse, rmse, mape, mspe = metric(preds, trues)
-        self.logger.info(f"mse:{mse}, mae:{mae}, mape:{mape}, dtw:{dtw}")
-        # f = open("result_long_term_forecast.txt", 'a')
-        # f.write(setting + "  \n")
-        # f.write('mse:{}, mae:{}, dtw:{}'.format(mse, mae, dtw))
-        # f.write('\n')
-        # f.write('\n')
-        # f.close()
+            self.model.eval()
+            with torch.no_grad():
+                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
+                    # decoder input
+                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
+                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
+                    # encoder - decoder
+                    if self.args.use_amp:
+                        with torch.cuda.amp.autocast():
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    else:
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe, self.train_cost]))
-        np.save(folder_path + 'pred.npy', preds)
-        np.save(folder_path + 'true.npy', trues)
+                    f_dim = -1 if self.args.features == 'MS' else 0
+                    outputs = outputs[:, -self.args.pred_len:, :]
+                    batch_y = batch_y[:, -self.args.pred_len:, :]
+                    outputs = outputs.detach().cpu().numpy()
+                    batch_y = batch_y.detach().cpu().numpy()
+                    if test_data.scale and self.args.inverse:
+                        shape = batch_y.shape
+                        if self.args.features == 'MS':
+                            outputs = np.tile(outputs, [1, 1, batch_y.shape[-1]])
+                        outputs = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                        batch_y = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
+            
+                    outputs = outputs[:, :, f_dim:]
+                    batch_y = batch_y[:, :, f_dim:]
 
+                    pred = outputs
+                    true = batch_y
+
+                    preds.append(pred)
+                    trues.append(true)
+                    if i % 20 == 0:
+                        input = batch_x.detach().cpu().numpy()
+                        if test_data.scale and self.args.inverse:
+                            shape = input.shape
+                            input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                        gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
+                        pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
+                        # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+
+            preds = np.concatenate(preds, axis=0)
+            trues = np.concatenate(trues, axis=0)
+            self.logger.info(f'test shape:{preds.shape} {trues.shape}')
+            preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
+            trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
+            self.logger.info(f'test shape:{preds.shape} {trues.shape}')
+
+            # result save path construction
+            dataset = self.args.model_id.split('_')[0]
+            if 'TSGym' in setting:
+                if 'Transformer' in setting:
+                    folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_transformer/{dataset}/' + setting + '/'
+                elif 'LLM' in setting:
+                    folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_LLM/{dataset}/' + setting + '/'
+                elif 'TSFM' in setting:
+                    folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_TSFM/{dataset}/' + setting + '/'
+                else:
+                    folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_non_transformer/{dataset}/' + setting + '/'
+            else:
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}/{dataset}/' + setting + '/'
+
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+            
+            # dtw calculation
+            if self.args.use_dtw:
+                dtw_list = []
+                manhattan_distance = lambda x, y: np.abs(x - y)
+                for i in range(preds.shape[0]):
+                    x = preds[i].reshape(-1,1)
+                    y = trues[i].reshape(-1,1)
+                    if i % 100 == 0:
+                        self.logger.info(f"calculating dtw iter:{i}")
+                    d, _, _, _ = accelerated_dtw(x, y, dist=manhattan_distance)
+                    dtw_list.append(d)
+                dtw = np.array(dtw_list).mean()
+            else:
+                dtw = 'not calculated'
+
+            mae, mse, rmse, mape, mspe = metric(preds, trues)
+            self.logger.info(f"file:{test_file}, mse:{mse}, mae:{mae}, mape:{mape}, dtw:{dtw}")
+            # f = open("result_long_term_forecast.txt", 'a')
+            # f.write(setting + "  \n")
+            # f.write('mse:{}, mae:{}, dtw:{}'.format(mse, mae, dtw))
+            # f.write('\n')
+            # f.write('\n')
+            # f.close()
+
+            if test_index == 0:
+                np.save(folder_path + f'metrics.npy', np.array([mae, mse, rmse, mape, mspe, self.train_cost]))
+                np.save(folder_path + f'pred.npy', preds)
+                np.save(folder_path + f'true.npy', trues)
+            else:
+                np.save(folder_path + f'{test_file.split(".")[0]}_metrics.npy', np.array([mae, mse, rmse, mape, mspe, self.train_cost]))
+                np.save(folder_path + f'{test_file.split(".")[0]}_pred.npy', preds)
+                np.save(folder_path + f'{test_file.split(".")[0]}_true.npy', trues)
+
+            test_results.append(f"file:{test_file}, mse:{mse}, mae:{mae}, mape:{mape}, rmse:{rmse}, mspe:{mspe}, dtw:{dtw}")
+
+        # 恢复原始 data_path
+        self.args.data_path = original_data_path
+        
         if os.path.exists(checkpoint_path):
             shutil.rmtree(checkpoint_path)
 
-        return f"mse:{mse}, mae:{mae}, mape:{mape}, rmse:{rmse}, mspe:{mspe}, dtw:{dtw}"
+        return "\n".join(test_results)

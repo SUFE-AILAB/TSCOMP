@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from layers.Retrieval import TSGymRetrievalFusionBlock, TSGymRetrievalTool
 from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer
 from layers.SelfAttention_Family import FullAttention, ProbAttention, DSAttention, FourierCrossAttention, AutoCorrelation
 from layers.SelfAttention_Family import AttentionLayer
@@ -197,6 +198,7 @@ class Model(nn.Module):
                  gym_feature_attn='self-attention',
                  gym_encoder_only=True,
                  gym_frozen=True,
+                 gym_rag=False
                  ):
         super(Model, self).__init__()
         self.task_name = configs.task_name
@@ -215,6 +217,7 @@ class Model(nn.Module):
         self.gym_feature_attn = gym_feature_attn
         self.gym_encoder_only = eval(gym_encoder_only) if isinstance(gym_encoder_only, str) else gym_encoder_only
         self.gym_frozen = eval(gym_frozen) if isinstance(gym_frozen, str) else gym_frozen
+        self.gym_rag = eval(gym_rag) if isinstance(gym_rag, str) else gym_rag
 
         # build model
         self._build_series_preprocessing()
@@ -685,7 +688,21 @@ class Model(nn.Module):
                     raise NotImplementedError
             else:
                 raise NotImplementedError
-
+    
+        if self.gym_rag:
+            self.rt = TSGymRetrievalTool(
+                seq_len=self.seq_len,
+                pred_len=self.pred_len,
+                channels=self.configs.enc_in,
+                n_period=1, # 与多尺度解耦
+                topm=self.configs.topm,
+                norm=self.gym_series_norm
+            )
+            self.rfb = TSGymRetrievalFusionBlock(
+                period_num = self.rt.period_num, 
+                pred_len = self.pred_len, 
+                channels=self.configs.enc_in)
+            
     def multi_scale_process_inputs(self, x_enc, x_mark_enc=None):
         if self.configs.down_sampling_method == 'max':
             down_pool = torch.nn.MaxPool1d(self.configs.down_sampling_window, return_indices=False)
@@ -726,6 +743,37 @@ class Model(nn.Module):
 
         return x_enc, x_mark_enc
 
+    def prepare_dataset(self, train_data, valid_data, test_data):
+        """RAG: prepare retrieval features for train/valid/test sets"""
+        self.rt.prepare_dataset(train_data)
+        
+        self.retrieval_dict = {}
+        
+        print('Doing Train Retrieval')
+        train_rt = self.rt.retrieve_all(train_data, train=True)
+
+        print('Doing Valid Retrieval')
+        valid_rt = self.rt.retrieve_all(valid_data, train=False)
+
+        print('Doing Test Retrieval')
+        test_rt = self.rt.retrieve_all(test_data, train=False)
+
+        del self.rt
+        torch.cuda.empty_cache()
+            
+        self.retrieval_dict['train'] = train_rt.detach()
+        self.retrieval_dict['valid'] = valid_rt.detach()
+        self.retrieval_dict['test'] = test_rt.detach()
+
+    def fetch_batch(self, index, mode):
+        """
+        根据 index 获取当前 batch 的检索特征
+        """
+        # 注意：为了节省显存，大字典通常存在 CPU 上，取 batch 时再移到 GPU
+        # 假设缓存的维度是 [G, Total_Samples, P, C]
+        pred_from_retrieval = self.retrieval_dict[mode][:, index.cpu()] # G, B, P, C
+        return pred_from_retrieval.to(index.device)
+    
     def f_series_preprocessing_sampling(self, x_enc, x_mark_enc=None):
         '''
         input:
@@ -1076,6 +1124,12 @@ class Model(nn.Module):
         # de-normalization layer (if necessary)
         # 如果混合粒度情况, 用第一(0)层参照TimeMixer
         dec_out = self.series_norm[0](dec_out, 'denorm') if self.series_sampling else self.series_norm(dec_out, 'denorm')
+
+        if self.gym_rag:
+            retrieval_pred = self.rfb(rag_raw_data)
+            dec_out = torch.cat([dec_out, retrieval_pred], dim=1)
+            dec_out = self.rfb.linear_pred(dec_out.permute(0, 2, 1)).permute(0, 2, 1)
+
         return dec_out
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
@@ -1134,17 +1188,21 @@ class Model(nn.Module):
         # 【3】series decoding
         # f_series_decoing_sampling or f_series_decoding_wosampling:
         if self.series_sampling:
-            dec_out = self.f_series_decoing_sampling(enc_out, enc_out_fa, x_dec, x_mark_dec)
+            dec_out = self.f_series_decoing_sampling_regressing(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data)
         else:
-            dec_out = self.f_series_decoding_wosampling(enc_out, enc_out_fa, x_dec, x_mark_dec)
+            dec_out = self.f_series_decoding_wosampling_regressing(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data)
         # return: dec_out
         return dec_out
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None, rag_raw_data=None):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
             x_mark_enc = x_mark_enc if self.gym_x_mark else None
             x_mark_dec = x_mark_dec if self.gym_x_mark else None
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec, rag_raw_data)
+        elif self.task_name == 'finance_regressing':
+            x_mark_enc = x_mark_enc if self.gym_x_mark else None
+            x_mark_dec = x_mark_dec if self.gym_x_mark else None
+            dec_out = self.regressing(x_enc, x_mark_enc, x_dec, x_mark_dec, rag_raw_data)
         else:
             raise NotImplementedError
         return dec_out

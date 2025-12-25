@@ -164,7 +164,12 @@ if __name__ == '__main__':
     parser.add_argument('--leg_degree', type=int, default=2, help='degree of legendre polynomial')
     parser.add_argument('--offload', type=int, default=0)
 
+    # perturb_files
+    parser.add_argument('--add_perturb_data', action='store_true', help='add_perturb_data to test', default=True)
 
+    # RAFT
+    parser.add_argument('--n_period', type=int, default=3, help='Number of Periods')
+    parser.add_argument('--topm', type=int, default=20, help='Number of Retrievals')
     
     args = parser.parse_args()
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False

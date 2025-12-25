@@ -31,7 +31,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         else:
             model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
             gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
-            gym_encoder_only, gym_frozen = self.args.model.split('_')
+            gym_encoder_only, gym_frozen, gym_rag = self.args.model.split('_')
             model_name = 'TSGym'
             model = self.model_dict[model_name].Model(self.args,
                                                       gym_x_mark=gym_x_mark,
@@ -44,11 +44,20 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                                                       gym_attn=gym_attn,
                                                       gym_feature_attn=gym_feature_attn,
                                                       gym_encoder_only=gym_encoder_only,
-                                                      gym_frozen=gym_frozen).float()
+                                                      gym_frozen=gym_frozen,
+                                                      gym_rag=gym_rag).float()
             self.save_suffix = 'Gym'
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
+
+        if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
+            self.args.use_rag = True
+            train_data, train_loader = self._get_data(flag='train')
+            vali_data, vali_loader = self._get_data(flag='val')
+            test_data, test_loader = self._get_data(flag='test')
+            
+            model.prepare_dataset(train_data, vali_data, test_data)
         return model
 
     def _get_data(self, flag):
@@ -113,7 +122,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 self.model.train()
                 epoch_time = time.time()
-                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(train_loader)):
+                for i, batch_data in tqdm(enumerate(train_loader)):
+                    batch_x, batch_y, batch_x_mark, batch_y_mark = batch_data[0], batch_data[1], batch_data[2], batch_data[3]
+                    rag_raw_data = None
+                    if getattr(self.args, 'use_rag', False):
+                        index = batch_data[4].to(self.device)
+                        if self.args.model != 'RAFT':
+                            with torch.no_grad(): # 通常检索过程不需要梯度传导回数据库
+                                rag_raw_data = self.model.fetch_batch(index, mode='train')
+
                     iter_count += 1
                     model_optim.zero_grad()
 
@@ -124,7 +141,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     # encoder - decoder
                     if self.args.use_amp:
                         with torch.cuda.amp.autocast():
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            if self.args.model == 'RAFT':
+                                outputs = self.model(batch_x, index, mode='train')
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
 
                             f_dim = -1 if self.args.features == 'MS' else 0
                             outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -132,7 +152,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                             loss = criterion(outputs, batch_y)
                             train_loss.append(loss.item())
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        if self.args.model == 'RAFT':
+                            outputs = self.model(batch_x, index, mode='train')
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -193,7 +216,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         total_loss = []
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+            for i, batch_data in enumerate(vali_loader):
+                batch_x, batch_y, batch_x_mark, batch_y_mark = batch_data[0], batch_data[1], batch_data[2], batch_data[3]
+                rag_raw_data = None
+                if getattr(self.args, 'use_rag', False):
+                    index = batch_data[4].to(self.device)
+                    if self.args.model != 'RAFT':
+                        with torch.no_grad(): # 通常检索过程不需要梯度传导回数据库
+                            rag_raw_data = self.model.fetch_batch(index, mode='valid')
+
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
                 dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
@@ -201,9 +232,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        if self.args.model == 'RAFT':
+                            outputs = self.model(batch_x, index, mode='valid')
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
                 else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    if self.args.model == 'RAFT':
+                        outputs = self.model(batch_x, index, mode='valid')
+                    else:
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
@@ -224,7 +261,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         test_file_names = [self.args.data_path]
 
         perturb_files = glob.glob(os.path.join(self.args.root_path, f'{self.args.data_path.split(".")[0]}_*.csv'))
-        if len(perturb_files) > 0:
+        if len(perturb_files) > 0 and self.args.add_perturb_data:
             test_file_names.extend([os.path.basename(f) for f in sorted(perturb_files)])
 
         # 只需要加载一次模型
@@ -251,16 +288,29 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             self.model.eval()
             with torch.no_grad():
-                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
+                for i, batch_data in tqdm(enumerate(test_loader)):
+                    batch_x, batch_y, batch_x_mark, batch_y_mark = batch_data[0], batch_data[1], batch_data[2], batch_data[3]
+                    rag_raw_data = None
+                    if getattr(self.args, 'use_rag', False):
+                        index = batch_data[4].to(self.device)
+                        if self.args.model != 'RAFT':
+                            with torch.no_grad(): # 通常检索过程不需要梯度传导回数据库
+                                rag_raw_data = self.model.fetch_batch(index, mode='test')
                     # decoder input
                     dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
                     dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
                     # encoder - decoder
                     if self.args.use_amp:
                         with torch.cuda.amp.autocast():
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            if self.args.model == 'RAFT':
+                                outputs = self.model(batch_x, index, mode='test')
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        if self.args.model == 'RAFT':
+                            outputs = self.model(batch_x, index, mode='test')
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
 
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, :]
@@ -345,8 +395,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 np.save(folder_path + f'true.npy', trues)
             else:
                 np.save(folder_path + f'{test_file.split(".")[0]}_metrics.npy', np.array([mae, mse, rmse, mape, mspe, self.train_cost]))
-                np.save(folder_path + f'{test_file.split(".")[0]}_pred.npy', preds)
-                np.save(folder_path + f'{test_file.split(".")[0]}_true.npy', trues)
+                # np.save(folder_path + f'{test_file.split(".")[0]}_pred.npy', preds)
+                # np.save(folder_path + f'{test_file.split(".")[0]}_true.npy', trues)
 
             test_results.append(f"file:{test_file}, mse:{mse}, mae:{mae}, mape:{mape}, rmse:{rmse}, mspe:{mspe}, dtw:{dtw}")
 

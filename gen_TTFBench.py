@@ -517,7 +517,10 @@ def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, 
 
     # Decide on the common component flag: with some probability, add a common perturbation.
     # (This common component will be the same for all channels.)
-    p_common = 0.5  # 50% chance that a common perturbation is added.
+    if mode == "common_strong":
+        p_common = 1.0
+    else:
+        p_common = 0.5  # 50% chance that a common perturbation is added.
     channel_profiles = {}
     for col in channels:
         train_series = norm_df[col].values[:train_end]
@@ -561,7 +564,10 @@ def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, 
             else:
                 common_component = common_raw
             # Sample a common weight factor (how strongly the common perturbation affects each channel)
-            weight_common = global_rng.uniform(0, 1.0)
+            if mode == "common_strong":
+                weight_common = global_rng.uniform(0.8, 1.5) # Strong common weight
+            else:
+                weight_common = global_rng.uniform(0, 1.0)
         else:
             common_component = np.zeros(n - val_end)
             weight_common = 0.0
@@ -618,7 +624,10 @@ def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, 
             if is_flat > 0.8 or is_outlier > 0.9:
                 adjusted_weight_common *= 0.1  # suppress common influence
 
-            weight_indep = global_rng.uniform(0.4, 1.0)
+            if mode == "common_strong":
+                weight_indep = global_rng.uniform(0.0, 0.2) # Suppress independent noise
+            else:
+                weight_indep = global_rng.uniform(0.4, 1.0)
             adjusted_weight_common = np.clip(adjusted_weight_common, 0.0, 1.0)
 
             signed_common = avg_corr_sign[col] * common_component
@@ -669,6 +678,14 @@ def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, 
                 ax.axvline(train_end, color='green', linestyle='--')
                 ax.axvline(val_end, color='red', linestyle='--')
 
+                # 强制固定 Y 轴范围，以便跨实验对比幅度
+                # 以原始信号的范围为基准，上下各扩展 2 倍
+                y_vals = clean_df[col].values
+                y_min, y_max = np.min(y_vals), np.max(y_vals)
+                y_range = y_max - y_min if y_max != y_min else 1.0
+                center = (y_max + y_min) / 2
+                ax.set_ylim(center - 2.0 * y_range, center + 2.0 * y_range)
+
                 ax.tick_params(axis='both', which='major', labelsize=14)
                 ax.set_ylabel("Value", fontsize=18)
                 # ax.legend(fontsize=14)
@@ -716,6 +733,13 @@ def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, 
                 ax.plot(x, raw_indep_all[col], color="blue")
                 ax.axvline(train_end, color='green', linestyle='--')
                 ax.axvline(val_end, color='red', linestyle='--')
+
+                # 强制固定 Y 轴范围 (对称显示)
+                y_vals = clean_df[col].values
+                y_range = np.max(y_vals) - np.min(y_vals) if len(y_vals) > 0 else 1.0
+                # 扰动通常在 0 附近，使用对称的固定范围
+                ax.set_ylim(-2.0 * y_range, 2.0 * y_range)
+                
                 ax.set_title(f"Channel: {col}", fontsize=18, loc='left')
                 ax.set_ylabel("Perturbation", fontsize=18)
                 ax.tick_params(axis='both', which='major', labelsize=14)
@@ -782,19 +806,26 @@ def generate_dataset(dataset_name, mode="mixed", intensity=1.0, n_samples=1000, 
 
 if __name__ == "__main__":
     # Generate specific datasets for testing generalization
-    n_samples = 10
-    for dataset in ["ETTm1", "exchange_rate", "weather", "ETTh1", "ETTh2", "ETTm2"]:
-        generate_dataset(dataset, mode="shift", intensity=1.0, n_samples=n_samples, output_subdir="shift_med")
+    n_samples = 5
+    for dataset in ["exchange_rate", "ETTh1", "ETTh2", "ETTm1", "weather", "ETTm2",]: #"ETTm1", "weather", "ETTm2", 
+        # generate_dataset(dataset, mode="shift", intensity=1.0, n_samples=n_samples, output_subdir="shift_med")
+        # generate_dataset(dataset, mode="shift", intensity=2.0, n_samples=n_samples, output_subdir="shift_high")
+        generate_dataset(dataset, mode="shift", intensity=3.0, n_samples=n_samples, output_subdir="shift_extreme")
         # 1. Noise variations
-        generate_dataset(dataset, mode="noise", intensity=0.5, n_samples=n_samples, output_subdir="noise_low")
+        # generate_dataset(dataset, mode="noise", intensity=0.5, n_samples=n_samples, output_subdir="noise_low")
         # generate_dataset(dataset, mode="noise", intensity=1.0, n_samples=n_samples, output_subdir="noise_med")
         # generate_dataset(dataset, mode="noise", intensity=2.0, n_samples=n_samples, output_subdir="noise_high")
         
         # 2. Trend variations
-        generate_dataset(dataset, mode="trend", intensity=1.0, n_samples=n_samples, output_subdir="trend_med")
+        # generate_dataset(dataset, mode="trend", intensity=1.0, n_samples=n_samples, output_subdir="trend_med")
+        # generate_dataset(dataset, mode="trend", intensity=2.0, n_samples=n_samples, output_subdir="trend_high")
         
         # 3. Seasonality variations
-        generate_dataset(dataset, mode="seasonality", intensity=1.0, n_samples=n_samples, output_subdir="seasonality_med")
-        
+        # generate_dataset(dataset, mode="seasonality", intensity=1.0, n_samples=n_samples, output_subdir="seasonality_med")
+        # generate_dataset(dataset, mode="seasonality", intensity=2.0, n_samples=n_samples, output_subdir="seasonality_high")
+
         # 4. Mixed (Original)
-        generate_dataset(dataset, mode="mixed", intensity=1.0, n_samples=n_samples)
+        # generate_dataset(dataset, mode="mixed", intensity=1.0, n_samples=n_samples)
+        # generate_dataset(dataset, mode="mixed", intensity=2.0, n_samples=n_samples, output_subdir="mixed_high")
+
+        generate_dataset(dataset, mode="common_strong", intensity=2.0, n_samples=n_samples, output_subdir="common_strong")

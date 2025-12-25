@@ -1,0 +1,432 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import copy
+import math
+from tqdm import tqdm
+
+from torch.utils.data import Dataset, DataLoader
+
+from layers.StandardNorm import Normalize, DishTS
+
+class TSGymRetrievalFusionBlock(nn.Module):
+    def __init__(self, period_num, pred_len, channels):
+        """
+        参数:
+            period_num (list): 周期列表，例如 [1, 12, 24]
+            pred_len (int): 预测序列长度
+            channels (int): 输入特征通道数 (C)
+        """
+        super().__init__()
+        self.period_num = period_num
+        self.pred_len = pred_len
+        self.channels = channels
+        
+        # --- 核心组件：多尺度投影层 ---
+        module_list = [
+            nn.Linear(self.pred_len // g, self.pred_len)
+            for g in self.period_num
+        ]
+        self.retrieval_pred = nn.ModuleList(module_list)
+        self.linear_pred = nn.Linear(2 * self.pred_len, self.pred_len)
+        
+    def forward(self, pred_from_retrieval):
+        """
+        参数:
+            pred_from_retrieval: 从 RAFTStore 取出的原始数据
+                          Shape: [G, B, Pred_Len, Channels]
+        返回:
+            fused_features: 融合后的特征
+                            Shape: [B, Pred_Len, D_Model]
+        """
+        G, B, P, C = pred_from_retrieval.shape
+        assert P == self.pred_len, f"预测长度不匹配: 输入 {P} vs 定义 {self.pred_len}"
+        assert C == self.channels, f"通道数不匹配: 输入 {C} vs 定义 {self.channels}"
+
+        retrieval_pred_list = []
+
+        # 遍历每一个时间尺度 (Grid)
+        for i, pr in enumerate(pred_from_retrieval):
+            g = self.period_num[i]
+            pr = pr.reshape(B, P // g, g, C)
+            pr = pr[:, :, 0, :]
+
+            # 投影/特征提取 (Projection)
+            pr = self.retrieval_pred[i](pr.permute(0, 2, 1)).permute(0, 2, 1)
+            pr = pr.reshape(B, self.pred_len, self.channels)
+            retrieval_pred_list.append(pr)
+
+        # 多尺度融合 (Stack & Sum)
+        # [B, P, C]
+        retrieval_pred_list = torch.stack(retrieval_pred_list, dim=1).sum(dim=1)
+        
+        return retrieval_pred_list
+
+class TSGymRetrievalTool():
+    def __init__(
+        self,
+        seq_len,
+        pred_len,
+        channels,
+        n_period=3,
+        temperature=0.1,
+        topm=20,
+        with_dec=False,
+        return_key=False,
+        norm=None,
+    ):
+        period_num = [16, 8, 4, 2, 1]
+        period_num = period_num[-1 * n_period:]
+        
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+        self.channels = channels
+        
+        self.n_period = n_period
+        self.period_num = sorted(period_num, reverse=True)
+        
+        self.temperature = temperature
+        self.topm = topm
+        
+        self.with_dec = with_dec
+        self.return_key = return_key
+
+        self.norm = None # norm
+        
+    def prepare_dataset(self, train_data):
+        train_data_all = []
+        y_data_all = []
+
+        for i in range(len(train_data)):
+            td = train_data[i]
+            train_data_all.append(td[0])
+            
+            if self.with_dec:
+                y_data_all.append(td[1][-(train_data.pred_len + train_data.label_len):])
+            else:
+                y_data_all.append(td[1][-train_data.pred_len:])
+            
+        self.train_data_all = torch.stack(train_data_all, dim=0).float()
+        self.train_data_all_mg, _ = self.decompose_mg(self.train_data_all)
+        
+        self.y_data_all = torch.stack(y_data_all, dim=0).float()
+        self.y_data_all_mg, _ = self.decompose_mg(self.y_data_all)
+        self.n_train = self.train_data_all.shape[0]
+
+    def decompose_mg(self, data_all):
+        data_all = copy.deepcopy(data_all) # T, S, C
+
+        mg = []
+        for g in self.period_num:
+            cur = data_all.unfold(dimension=1, size=g, step=g).mean(dim=-1)
+            cur = cur.repeat_interleave(repeats=g, dim=1)
+            
+            mg.append(cur)
+#             data_all = data_all - cur
+            
+        mg = torch.stack(mg, dim=0) # G, T, S, C
+        
+        # if self.norm == 'None':
+        #     curr_norm = Normalize(self.channels, affine=False, non_norm=True)
+
+        #     for i, data_p in enumerate(mg):
+        #         mg[i] = curr_norm(data_p, 'norm')
+        # elif self.norm == 'Stat':
+        #     curr_norm = Normalize(self.channels, affine=False, non_norm=False)
+
+        #     for i, data_p in enumerate(mg):
+        #         mg[i] = curr_norm(data_p, 'norm')
+
+        # if remove_offset:
+        #     offset = []
+        #     for i, data_p in enumerate(mg):
+        #         cur_offset = data_p[:,-1:,:]
+        #         mg[i] = data_p - cur_offset
+        #         offset.append(cur_offset)
+        # else:
+        #     offset = None
+            
+        return mg, None
+    
+    def periodic_batch_corr(self, data_all, key, in_bsz = 512):
+        _, bsz, features = key.shape
+        _, train_len, _ = data_all.shape
+        
+        bx = key - torch.mean(key, dim=2, keepdim=True)
+        
+        iters = math.ceil(train_len / in_bsz)
+        
+        sim = []
+        for i in range(iters):
+            start_idx = i * in_bsz
+            end_idx = min((i + 1) * in_bsz, train_len)
+            
+            cur_data = data_all[:, start_idx:end_idx].to(key.device)
+            ax = cur_data - torch.mean(cur_data, dim=2, keepdim=True)
+            
+            cur_sim = torch.bmm(F.normalize(bx, dim=2), F.normalize(ax, dim=2).transpose(-1, -2))
+            sim.append(cur_sim)
+            
+        sim = torch.cat(sim, dim=2)
+        
+        return sim
+        
+    def retrieve(self, x, index, train=True):
+        index = index.to(x.device)
+        
+        bsz, seq_len, channels = x.shape
+        assert(seq_len == self.seq_len, channels == self.channels)
+        
+        x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
+
+        sim = self.periodic_batch_corr(
+            self.train_data_all_mg.flatten(start_dim=2), # G, T, S * C
+            x_mg.flatten(start_dim=2), # G, B, S * C
+        ) # G, B, T
+            
+        if train:
+            sliding_index = torch.arange(2 * (self.seq_len + self.pred_len) - 1).to(x.device)
+            sliding_index = sliding_index.unsqueeze(dim=0).repeat(len(index), 1)
+            sliding_index = sliding_index + (index - self.seq_len - self.pred_len + 1).unsqueeze(dim=1)
+            
+            sliding_index = torch.where(sliding_index >= 0, sliding_index, 0)
+            sliding_index = torch.where(sliding_index < self.n_train, sliding_index, self.n_train - 1)
+
+            self_mask = torch.zeros((bsz, self.n_train)).to(x.device)
+            self_mask = self_mask.scatter_(1, sliding_index, 1.)
+            self_mask = self_mask.unsqueeze(dim=0).repeat(self.n_period, 1, 1)
+            
+            sim = sim.masked_fill_(self_mask.bool(), float('-inf')) # G, B, T
+
+        sim = sim.reshape(self.n_period * bsz, self.n_train) # G X B, T
+                
+        topm_index = torch.topk(sim, self.topm, dim=1).indices
+        ranking_sim = torch.ones_like(sim) * float('-inf')
+        
+        rows = torch.arange(sim.size(0)).unsqueeze(-1).to(sim.device)
+        ranking_sim[rows, topm_index] = sim[rows, topm_index]
+        
+        sim = sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
+        ranking_sim = ranking_sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
+
+        data_len, seq_len, channels = self.train_data_all.shape
+            
+        ranking_prob = F.softmax(ranking_sim / self.temperature, dim=2)
+        # ranking_prob = ranking_prob.detach().cpu() # G, B, T
+        
+        y_data_all = self.y_data_all_mg.flatten(start_dim=2) # G, T, P * C
+        
+        pred_from_retrieval = torch.bmm(ranking_prob, y_data_all).reshape(self.n_period, bsz, -1, channels)
+        pred_from_retrieval = pred_from_retrieval.to(x.device)
+        
+        return pred_from_retrieval
+    
+    def retrieve_all(self, data, train=False):
+        assert(self.train_data_all_mg != None)
+        
+        # data_with_index = IndexWrapper(data)
+
+        rt_loader = DataLoader(
+            data, # data_with_index
+            batch_size=1024,
+            shuffle=False,
+            num_workers=0,
+            drop_last=False
+        )
+        
+        retrievals = []
+        with torch.no_grad():
+            for batch_x, batch_y, batch_x_mark, batch_y_mark, index in tqdm(rt_loader):
+                pred_from_retrieval = self.retrieve(batch_x.float().to(data.device), index, train=train)
+                pred_from_retrieval = pred_from_retrieval.cpu()
+                retrievals.append(pred_from_retrieval)
+                
+        retrievals = torch.cat(retrievals, dim=1)
+        
+        return retrievals
+    
+class RetrievalTool():
+    def __init__(
+        self,
+        seq_len,
+        pred_len,
+        channels,
+        n_period=3,
+        temperature=0.1,
+        topm=20,
+        with_dec=False,
+        return_key=False,
+    ):
+        period_num = [16, 8, 4, 2, 1]
+        period_num = period_num[-1 * n_period:]
+        
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+        self.channels = channels
+        
+        self.n_period = n_period
+        self.period_num = sorted(period_num, reverse=True)
+        
+        self.temperature = temperature
+        self.topm = topm
+        
+        self.with_dec = with_dec
+        self.return_key = return_key
+        
+    def prepare_dataset(self, train_data):
+        train_data_all = []
+        y_data_all = []
+
+        for i in range(len(train_data)):
+            td = train_data[i]
+            train_data_all.append(td[0])
+            
+            if self.with_dec:
+                y_data_all.append(td[1][-(train_data.pred_len + train_data.label_len):])
+            else:
+                y_data_all.append(td[1][-train_data.pred_len:])
+            
+        self.train_data_all = torch.stack(train_data_all, dim=0).float()
+        self.train_data_all_mg, _ = self.decompose_mg(self.train_data_all)
+        
+        self.y_data_all = torch.stack(y_data_all, dim=0).float()
+        self.y_data_all_mg, _ = self.decompose_mg(self.y_data_all)
+
+        self.n_train = self.train_data_all.shape[0]
+
+    def decompose_mg(self, data_all, remove_offset=True):
+        data_all = copy.deepcopy(data_all) # T, S, C
+
+        mg = []
+        for g in self.period_num:
+            cur = data_all.unfold(dimension=1, size=g, step=g).mean(dim=-1)
+            cur = cur.repeat_interleave(repeats=g, dim=1)
+            
+            mg.append(cur)
+#             data_all = data_all - cur
+            
+        mg = torch.stack(mg, dim=0) # G, T, S, C
+
+        if remove_offset:
+            offset = []
+            for i, data_p in enumerate(mg):
+                cur_offset = data_p[:,-1:,:]
+                mg[i] = data_p - cur_offset
+                offset.append(cur_offset)
+        else:
+            offset = None
+            
+        offset = torch.stack(offset, dim=0)
+            
+        return mg, offset
+    
+    def periodic_batch_corr(self, data_all, key, in_bsz = 512):
+        _, bsz, features = key.shape
+        _, train_len, _ = data_all.shape
+        
+        bx = key - torch.mean(key, dim=2, keepdim=True)
+        
+        iters = math.ceil(train_len / in_bsz)
+        
+        sim = []
+        for i in range(iters):
+            start_idx = i * in_bsz
+            end_idx = min((i + 1) * in_bsz, train_len)
+            
+            cur_data = data_all[:, start_idx:end_idx].to(key.device)
+            ax = cur_data - torch.mean(cur_data, dim=2, keepdim=True)
+            
+            cur_sim = torch.bmm(F.normalize(bx, dim=2), F.normalize(ax, dim=2).transpose(-1, -2))
+            sim.append(cur_sim)
+            
+        sim = torch.cat(sim, dim=2)
+        
+        return sim
+        
+    def retrieve(self, x, index, train=True):
+        index = index.to(x.device)
+        
+        bsz, seq_len, channels = x.shape
+        assert(seq_len == self.seq_len, channels == self.channels)
+        
+        x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
+
+        sim = self.periodic_batch_corr(
+            self.train_data_all_mg.flatten(start_dim=2), # G, T, S * C
+            x_mg.flatten(start_dim=2), # G, B, S * C
+        ) # G, B, T
+            
+        if train:
+            sliding_index = torch.arange(2 * (self.seq_len + self.pred_len) - 1).to(x.device)
+            sliding_index = sliding_index.unsqueeze(dim=0).repeat(len(index), 1)
+            sliding_index = sliding_index + (index - self.seq_len - self.pred_len + 1).unsqueeze(dim=1)
+            
+            sliding_index = torch.where(sliding_index >= 0, sliding_index, 0)
+            sliding_index = torch.where(sliding_index < self.n_train, sliding_index, self.n_train - 1)
+
+            self_mask = torch.zeros((bsz, self.n_train)).to(x.device)
+            self_mask = self_mask.scatter_(1, sliding_index, 1.)
+            self_mask = self_mask.unsqueeze(dim=0).repeat(self.n_period, 1, 1)
+            
+            sim = sim.masked_fill_(self_mask.bool(), float('-inf')) # G, B, T
+
+        sim = sim.reshape(self.n_period * bsz, self.n_train) # G X B, T
+                
+        topm_index = torch.topk(sim, self.topm, dim=1).indices
+        ranking_sim = torch.ones_like(sim) * float('-inf')
+        
+        rows = torch.arange(sim.size(0)).unsqueeze(-1).to(sim.device)
+        ranking_sim[rows, topm_index] = sim[rows, topm_index]
+        
+        sim = sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
+        ranking_sim = ranking_sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
+
+        data_len, seq_len, channels = self.train_data_all.shape
+            
+        ranking_prob = F.softmax(ranking_sim / self.temperature, dim=2)
+        # ranking_prob = ranking_prob.detach().cpu() # G, B, T
+        
+        y_data_all = self.y_data_all_mg.flatten(start_dim=2) # G, T, P * C
+        
+        pred_from_retrieval = torch.bmm(ranking_prob, y_data_all).reshape(self.n_period, bsz, -1, channels)
+        pred_from_retrieval = pred_from_retrieval.to(x.device)
+        
+        return pred_from_retrieval
+    
+    def retrieve_all(self, data, train=False):
+        assert(self.train_data_all_mg != None)
+        
+        # data_with_index = IndexWrapper(data)
+
+        rt_loader = DataLoader(
+            data, # data_with_index
+            batch_size=1024,
+            shuffle=False,
+            num_workers=0,
+            drop_last=False
+        )
+        
+        retrievals = []
+        with torch.no_grad():
+            for batch_x, batch_y, batch_x_mark, batch_y_mark, index in tqdm(rt_loader):
+                pred_from_retrieval = self.retrieve(batch_x.float().to(data.device), index, train=train)
+                pred_from_retrieval = pred_from_retrieval.cpu()
+                retrievals.append(pred_from_retrieval)
+                
+        retrievals = torch.cat(retrievals, dim=1)
+        
+        return retrievals
+    
+class IndexWrapper(torch.utils.data.Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+    
+    def __getitem__(self, index):
+        # 调用原始 dataset 的 getitem
+        data = self.dataset[index]
+        # 强行把 index 加进去返回
+        return index, *data 
+    
+    def __len__(self):
+        return len(self.dataset)

@@ -7,9 +7,11 @@ from exp.exp_imputation import Exp_Imputation
 from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
 from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
+from exp.exp_finannce_regressing import Exp_Finance_Regressing
 from utils.print_args import print_args
 from utils.tools import GPUMemoryMonitor, init_db, log_start, log_end
 import random
+import sys
 import numpy as np
 
 if __name__ == '__main__':
@@ -148,6 +150,12 @@ if __name__ == '__main__':
     parser.add_argument('--noisy_gating', action='store_true', help='noisy gating', default=False)
     parser.add_argument('--k', type=int, default=1, help='noisy gating top k')
     
+    # GPT4TS
+    parser.add_argument('--is_gpt', type=int, default=0, help='flag for using llm ')
+    parser.add_argument('--llm_layers', type=int, default=6, help='llm layers ')
+    parser.add_argument('--pretrain', type=int, default=1, help='flag for using pretrained llm ')
+    parser.add_argument('--frozen', type=int, default=1, help='frozen llm parameters')
+    
     # DBLoss
     parser.add_argument('--DBLossalpha', type=float, default=0.2, help='alpha parameter for DBLoss')
     parser.add_argument('--DBLossbeta', type=float, default=0.5, help='beta parameter for DBLoss')
@@ -201,6 +209,8 @@ if __name__ == '__main__':
         Exp = Exp_Anomaly_Detection
     elif args.task_name == 'classification':
         Exp = Exp_Classification
+    elif args.task_name == 'finance_regressing':
+        Exp = Exp_Finance_Regressing
     else:
         Exp = Exp_Long_Term_Forecast
 
@@ -245,6 +255,27 @@ if __name__ == '__main__':
                 args.loss,
                 args.learning_rate,
                 args.lradj, ii)
+        elif args.task_name == 'finance_regressing':
+            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
+                args.task_name.replace('finance_regressing', 'FINREG'),
+                args.model,
+                args.model_id.split('_')[0], # Update by cc
+                args.features,
+                args.seq_len,
+                args.label_len,
+                args.pred_len,
+                args.d_model,
+                args.e_layers,
+                args.d_layers,
+                args.d_ff,
+                args.factor,
+                args.embed,
+                args.distil,
+                args.des,
+                args.train_epochs,
+                args.loss,
+                args.learning_rate,
+                args.lradj, ii)
         else:
             raise NotImplementedError
         
@@ -257,7 +288,16 @@ if __name__ == '__main__':
             # setting record of experiments
             setting = setting_generator(args, ii)
             log_start(setting, DB_PATH=LOG_DB_PATH)
-            logging.basicConfig(filename=os.path.join("./logs",f"{setting}.log"), filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+            # logging.basicConfig(filename=os.path.join("./logs",f"{setting}.log"), filemode='a', format='%(asctime)s - %(message)s', level=logging.INFO)
+            log_file = os.path.join("./logs",f"{setting}.log")
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s - %(message)s',
+                handlers=[
+                    logging.FileHandler(log_file, mode='a'), # 输出到文件
+                    logging.StreamHandler(sys.stdout)        # 输出到控制台
+                ]
+            )
             args.logger = logging.getLogger()
             try:
                 exp = Exp(args)  # set experiments

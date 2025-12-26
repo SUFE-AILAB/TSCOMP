@@ -184,6 +184,8 @@ class TSFM(nn.Module):
         return x, None
 
 # Update 20251109 cc: 重构模型框架，将各个模块解耦方便后续扩展
+# Update 20251226 ls:增加rag组件
+# Update 20251218 cc: 加入回归任务
 
 class Model(nn.Module):
     def __init__(self, configs,
@@ -269,7 +271,7 @@ class Model(nn.Module):
         
     def _build_series_tokenization(self):
         # Series Tokenization
-        # no-patching & channel-independent: BxSxD -> (BxD)xSx1; patching: BxSxD -> (BxD)xS -> (BxD) x patch_num x patch_len
+        # channel-independent: no-patching: BxSxD -> (BxD)xSx1; patching: BxSxD -> (BxD)xS -> (BxD) x patch_num x patch_len
         if self.gym_channel_independent: # channel-independent
             if self.gym_input_embed == 'series-encoding': # CI + series-encoding
                 if self.gym_network_architecture in ['GRU']: # update 20251110 cc: 只有GRU不使用positional encoding
@@ -548,6 +550,8 @@ class Model(nn.Module):
                         nn.Dropout(self.configs.dropout),
                         nn.Linear(self.configs.enc_in * self.configs.seq_len, self.configs.num_classes)
                     ) # (B, C, S) -> (B, num_classes)
+                elif self.task_name == 'finance_regressing':
+                    self.head = nn.Linear(self.configs.enc_in, 1) # (B, C) -> (B, 1)
                 else:
                     raise NotImplementedError
                 # CI + series-encoding + series-sampling
@@ -581,6 +585,10 @@ class Model(nn.Module):
                                 nn.Linear(self.configs.enc_in * self.configs.seq_len // (self.configs.down_sampling_window ** i), self.configs.num_classes)
                             ) for i in range(self.configs.down_sampling_layers + 1)
                         ])
+                    elif self.task_name == 'finance_regressing':
+                        self.head = torch.nn.ModuleList([
+                            nn.Linear(self.configs.enc_in,1) for i in range(self.configs.down_sampling_layers + 1)
+                        ])
                     else:
                         raise NotImplementedError
             elif self.gym_input_embed == 'series-patching': # CI + series-patching
@@ -597,6 +605,12 @@ class Model(nn.Module):
                         nn.Dropout(self.configs.dropout),
                         nn.Linear(self.configs.enc_in * self.configs.d_model * patch_num, self.configs.num_classes)
                     ) # (B, C, patch_num, d_model) -> (B, num_classes)
+                elif self.task_name == 'finance_regressing':
+                    self.head = nn.Sequential(
+                        nn.Flatten(start_dim=1),
+                        nn.Dropout(self.configs.dropout),
+                        nn.Linear(self.configs.enc_in * self.configs.d_model, 1)
+                    ) # (B, C, patch_num, d_model) -> (B, 1)
                 else:
                     raise NotImplementedError
                 # CI + series-patching + series-sampling
@@ -617,6 +631,12 @@ class Model(nn.Module):
                                 nn.Dropout(self.configs.dropout),
                                 nn.Linear(self.configs.enc_in * self.configs.d_model * patch_num, self.configs.num_classes)
                             ) # (B, C, patch_num, d_model) -> (B, num_classes)
+                        elif self.task_name == 'finance_regressing':
+                            _head = nn.Sequential(
+                                nn.Flatten(start_dim=1),
+                                nn.Dropout(self.configs.dropout),
+                                nn.Linear(self.configs.enc_in * self.configs.d_model, 1)
+                            ) # (B, C, d_model) -> (B, 1)
                         self.head.append(_head)
                     self.head = nn.ModuleList(self.head)
             else:
@@ -636,6 +656,8 @@ class Model(nn.Module):
                         nn.Dropout(self.configs.dropout),
                         nn.Linear(self.configs.enc_in * self.configs.seq_len, self.configs.num_classes)
                     )
+                elif self.task_name == 'finance_regressing':
+                    self.head = nn.Linear(self.configs.enc_in, 1)
                 else:
                     raise NotImplementedError
                 # CD + series-encoding + series-sampling
@@ -669,6 +691,10 @@ class Model(nn.Module):
                             )
                             for i in range(self.configs.down_sampling_layers + 1)
                         ])
+                    elif self.task_name == 'finance_regressing':
+                        self.head = torch.nn.ModuleList([
+                            nn.Linear(self.configs.enc_in,1) for i in range(self.configs.down_sampling_layers + 1)
+                        ])
                     else:
                         raise NotImplementedError
             elif self.gym_input_embed == 'inverted-encoding':# CD + inverted-encoding
@@ -683,6 +709,12 @@ class Model(nn.Module):
                         nn.Flatten(start_dim=1),
                         nn.Dropout(self.configs.dropout),
                         nn.Linear(self.configs.d_model * self.configs.enc_in, self.configs.num_classes)
+                    ) # (B, C, d_model) -> (B, num_classes)
+                elif self.task_name == 'finance_regressing':
+                    self.head = nn.Sequential(
+                        nn.Flatten(start_dim=1),
+                        nn.Dropout(self.configs.dropout),
+                        nn.Linear(self.configs.d_model * self.configs.enc_in, 1)
                     ) # (B, C, d_model) -> (B, num_classes)
                 else:
                     raise NotImplementedError
@@ -1047,12 +1079,12 @@ class Model(nn.Module):
         enc_out, _ = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
         return enc_out
 
-    def f_series_decoing_sampling(self, enc_out, enc_out_fa, x_dec, x_mark_dec):
+    def f_series_decoing_sampling_forecasting(self, enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data=None):
         if self.gym_encoder_only: # encoder-only
             if self.gym_input_embed == 'series-encoding':
-                dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)]
+                dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)] # enc_out: B/B*C, S, dmodel -> B/B*C, S, C/1
                 if self.gym_feature_attn != 'null': dec_out = [dec_out_ + enc_out_fa_ for dec_out_, enc_out_fa_ in zip(dec_out, enc_out_fa)]
-                dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)]
+                dec_out = [self.head[i](_.permute(0, 2, 1)).permute(0, 2, 1) for i, _ in enumerate(dec_out)] # dec_out: B/B*C, 1, S -> B/B*C, pred_len, 1
                 dec_out = [_[:, -self.pred_len:, :] for _ in dec_out]
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
                 if self.gym_channel_independent: dec_out = dec_out.reshape(self.B, self.C, self.pred_len).permute(0, 2, 1).contiguous()
@@ -1076,8 +1108,30 @@ class Model(nn.Module):
             dec_out = self.rfb.linear_pred(dec_out.permute(0, 2, 1)).permute(0, 2, 1)
 
         return dec_out
+    
+    def f_series_decoing_sampling_regressing(self, enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data=None):
+        if self.gym_encoder_only: # encoder-only
+            if self.gym_input_embed == 'series-encoding':
+                dec_out = [self.decoder_projection[i](_) for i, _ in enumerate(enc_out)] # enc_out: B/B*C, S, dmodel -> B/B*C, S, C/1
+                if self.gym_feature_attn != 'null': dec_out = [dec_out_ + enc_out_fa_ for dec_out_, enc_out_fa_ in zip(dec_out, enc_out_fa)]
+                # channel independent: B*C, S, 1 -> B,C,S,1 -> B,C,S -> B,S,C
+                # channel dependent: B,S,C
+                if self.gym_channel_independent: dec_out = [_.reshape(self.B, self.C, self.seq_len, 1).squeeze(-1).permute(0,2,1) for _ in dec_out]
+                dec_out = [_[:, -1, :] for _ in dec_out] #B,C
+                dec_out = [self.head[i](_) for i, _ in enumerate(dec_out)] # dec_out:B,
+                dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+            elif self.gym_input_embed == 'series-patching':
+                enc_out = [_[:, -1, :] for _ in enc_out] # B*C, patchnum, dmodel -> B*C, dmodel
+                enc_out = [torch.reshape(_, (-1, self.n_vars, _.shape[-1])) for _ in enc_out] # B, C, dmodel
+                dec_out = [self.head[i](_) for i, _ in enumerate(enc_out)] # B, 1
+                dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+            else:
+                raise NotImplementedError
+        else: # encoder-decoder
+            raise NotImplementedError # series sampling with encoder-decoder not implemented yet
+        return dec_out
 
-    def f_series_decoding_wosampling(self, enc_out, enc_out_fa, x_dec, x_mark_dec):
+    def f_series_decoding_wosampling_forecasting(self, enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data=None):
         if self.gym_encoder_only: # encoder-only
             if self.gym_input_embed == 'inverted-encoding' or self.gym_input_embed == 'inverted':
                 dec_out = self.head(enc_out) # BxDxd_model -> BxDxpred_len
@@ -1137,8 +1191,95 @@ class Model(nn.Module):
             dec_out = self.rfb.linear_pred(dec_out.permute(0, 2, 1)).permute(0, 2, 1)
 
         return dec_out
+    
+    def f_series_decoding_wosampling_regressing(self, enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data=None):
+        if self.gym_encoder_only: # encoder-only
+            if self.gym_input_embed == 'inverted-encoding' or self.gym_input_embed == 'inverted':
+                dec_out = self.head(enc_out) # BxDxd_model -> Bx1
+            elif self.gym_input_embed == 'series-encoding':
+                dec_out = self.decoder_projection(enc_out) # BxSxd_model -> BxSxD or B*C,S,dmodel -> B*C,S,1
+                if self.gym_feature_attn != 'null': dec_out = dec_out + enc_out_fa
+                # B*C,S,1 -> B,C,S,1 -> B,C,S -> B,S,C
+                if self.gym_channel_independent: dec_out = dec_out.reshape(self.B, self.C, self.seq_len, 1).squeeze(-1).permute(0,2,1)
+                dec_out = dec_out[:, -1, :] # B,C
+                # projection to predicting length
+                dec_out = self.head(dec_out) # B,
+            elif self.gym_input_embed == 'series-patching':
+                enc_out = enc_out[:, -1, :] # bs*nvars, dmodel
+                # z: [bs x nvars x d_model]
+                enc_out = torch.reshape(enc_out, (-1, self.n_vars, enc_out.shape[-1]))
+                # z: [bs x nvars x d_model]
+                dec_out = self.head(enc_out)  # B x 1
+            else:
+                raise NotImplementedError
+        else: # encoder-decoder
+            raise NotImplementedError
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+        return dec_out
+
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec, rag_raw_data=None):
+        # 【1】series preprocessing
+        # f_series_preprocessing_sampling:
+        # return:
+        # - x_enc: list of sampled x_enc, each with shape (B or B*C, S_i, C or 1)
+        # - x_mark_enc: list of sampled x_mark_enc, each with shape (B or B*C, S_i, C or 1)
+        # - tau: list of tau for non-stationary attention
+        # - delta: list of delta for non-stationary attention
+        # - enc_out_fa: list of feature attention output
+        if self.series_sampling:
+            x_enc, x_mark_enc, tau, delta, enc_out_fa = self.f_series_preprocessing_sampling(x_enc, x_mark_enc)
+        # f_series_preprocessing_wosampling:
+        # return:
+        # - x_enc: (B or B*C, S, C or 1)
+        # - x_mark_enc: (B or B*C, S, C or 1)
+        # - tau: for non-stationary attention
+        # - delta: for non-stationary attention
+        # - enc_out_fa: feature attention output
+        if not self.series_sampling:
+            x_enc, x_mark_enc, tau, delta, enc_out_fa = self.f_series_preprocessing_wosampling(x_enc, x_mark_enc)
+
+        # 【2】series encoding
+        # f_series_encoding_decomposition_sampling:
+        # return:
+        # - enc_out: list of encoder output
+        # -- if series-encoding, each with shape (B or B*C, S_i, d_model)
+        # -- if series-patching, each with shape (B*C, patch_num, d_model)
+        if self.series_sampling and self.gym_series_decomp != 'None':
+            enc_out = self.f_series_encoding_decomposition_sampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
+        # f_series_encoding_decomposition_wosampling:
+        # return:
+        # - enc_out: encoder output
+        # -- if series-encoding, (B or B*C, S_i, d_model)
+        # -- if series-patching, (B*C, patch_num, d_model)
+        # -- if inverted-encoding, (B, S, d_model)
+        if not self.series_sampling and self.gym_series_decomp != 'None':
+            enc_out = self.f_series_encoding_decomposition_wosampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
+        # f_series_encoding_wodecomposition_sampling:
+        # return:
+        # - enc_out: list of encoder output
+        # -- if series-encoding, each with shape (B or B*C, S_i, d_model)
+        # -- if series-patching, each with shape (B*C, patch_num, d_model)
+        if self.series_sampling and self.gym_series_decomp == 'None':
+            enc_out = self.f_series_encoding_wodecomposition_sampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
+        # f_series_encoding_wodecomposition_wosampling:
+        # return:
+        # - enc_out: encoder output
+        # -- if series-encoding, (B or B*C, S_i, d_model)
+        # -- if series-patching, (B*C, patch_num, d_model)
+        # -- if inverted-encoding, (B, C, d_model)
+        if not self.series_sampling and self.gym_series_decomp == 'None':
+            enc_out = self.f_series_encoding_wodecomposition_wosampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
+            
+        # 【3】series decoding
+        # f_series_decoing_sampling or f_series_decoding_wosampling:
+        if self.series_sampling:
+            dec_out = self.f_series_decoing_sampling_forecasting(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data=rag_raw_data)
+        else:
+            dec_out = self.f_series_decoding_wosampling_forecasting(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data=rag_raw_data)
+        # return: dec_out
+        return dec_out
+    
+    def regressing(self, x_enc, x_mark_enc, x_dec, x_mark_dec, rag_raw_data=None):
         # 【1】series preprocessing
         # f_series_preprocessing_sampling:
         # return:
@@ -1198,6 +1339,8 @@ class Model(nn.Module):
         else:
             dec_out = self.f_series_decoding_wosampling_regressing(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data)
         # return: dec_out
+        dec_out = dec_out.flatten()
+        assert len(dec_out) == self.B
         return dec_out
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None, rag_raw_data=None):

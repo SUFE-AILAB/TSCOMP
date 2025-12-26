@@ -694,9 +694,9 @@ class Model(nn.Module):
                 seq_len=self.seq_len,
                 pred_len=self.pred_len,
                 channels=self.configs.enc_in,
-                n_period=1, # 与多尺度解耦
+                n_period=self.configs.n_period, # 与多尺度解耦
                 topm=self.configs.topm,
-                norm=self.gym_series_norm
+                channel_independence=self.gym_channel_independent
             )
             self.rfb = TSGymRetrievalFusionBlock(
                 period_num = self.rt.period_num, 
@@ -1069,6 +1069,12 @@ class Model(nn.Module):
         # de-normalization layer (if necessary)
         # 如果混合粒度情况, 用第一(0)层参照TimeMixer
         dec_out = self.series_norm[0](dec_out, 'denorm') if self.series_sampling else self.series_norm(dec_out, 'denorm')
+        
+        if self.gym_rag:
+            retrieval_pred = self.rfb(rag_raw_data)
+            dec_out = torch.cat([dec_out, retrieval_pred], dim=1)
+            dec_out = self.rfb.linear_pred(dec_out.permute(0, 2, 1)).permute(0, 2, 1)
+
         return dec_out
 
     def f_series_decoding_wosampling(self, enc_out, enc_out_fa, x_dec, x_mark_dec):

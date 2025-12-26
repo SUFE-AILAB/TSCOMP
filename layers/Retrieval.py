@@ -44,10 +44,14 @@ class TSGymRetrievalFusionBlock(nn.Module):
         assert P == self.pred_len, f"预测长度不匹配: 输入 {P} vs 定义 {self.pred_len}"
         assert C == self.channels, f"通道数不匹配: 输入 {C} vs 定义 {self.channels}"
 
-        retrieval_pred_list = []
+        # 目的：消除局部窗口的偏移，让 Linear 只学形状
+        seq_mean = torch.mean(pred_from_retrieval, dim=2, keepdim=True)
+        seq_std = torch.std(pred_from_retrieval, dim=2, keepdim=True) + 1e-5
+        x_norm = (pred_from_retrieval - seq_mean) / seq_std
 
+        retrieval_pred_list = []
         # 遍历每一个时间尺度 (Grid)
-        for i, pr in enumerate(pred_from_retrieval):
+        for i, pr in enumerate(x_norm):
             g = self.period_num[i]
             pr = pr.reshape(B, P // g, g, C)
             pr = pr[:, :, 0, :]
@@ -59,9 +63,14 @@ class TSGymRetrievalFusionBlock(nn.Module):
 
         # 多尺度融合 (Stack & Sum)
         # [B, P, C]
-        retrieval_pred_list = torch.stack(retrieval_pred_list, dim=1).sum(dim=1)
+        fused_out_norm = torch.stack(retrieval_pred_list, dim=1).sum(dim=1)
         
-        return retrieval_pred_list
+        final_mean = torch.mean(seq_mean, dim=0) # [B, 1, C]
+        final_std = torch.mean(seq_std, dim=0)
+        
+        fused_out_real = fused_out_norm * final_std + final_mean
+
+        return fused_out_real
 
 class TSGymRetrievalTool():
     def __init__(
@@ -74,7 +83,7 @@ class TSGymRetrievalTool():
         topm=20,
         with_dec=False,
         return_key=False,
-        norm=None,
+        channel_independence=False,
     ):
         period_num = [16, 8, 4, 2, 1]
         period_num = period_num[-1 * n_period:]
@@ -92,7 +101,7 @@ class TSGymRetrievalTool():
         self.with_dec = with_dec
         self.return_key = return_key
 
-        self.norm = None # norm
+        self.channel_independence = channel_independence
         
     def prepare_dataset(self, train_data):
         train_data_all = []
@@ -126,26 +135,6 @@ class TSGymRetrievalTool():
 #             data_all = data_all - cur
             
         mg = torch.stack(mg, dim=0) # G, T, S, C
-        
-        # if self.norm == 'None':
-        #     curr_norm = Normalize(self.channels, affine=False, non_norm=True)
-
-        #     for i, data_p in enumerate(mg):
-        #         mg[i] = curr_norm(data_p, 'norm')
-        # elif self.norm == 'Stat':
-        #     curr_norm = Normalize(self.channels, affine=False, non_norm=False)
-
-        #     for i, data_p in enumerate(mg):
-        #         mg[i] = curr_norm(data_p, 'norm')
-
-        # if remove_offset:
-        #     offset = []
-        #     for i, data_p in enumerate(mg):
-        #         cur_offset = data_p[:,-1:,:]
-        #         mg[i] = data_p - cur_offset
-        #         offset.append(cur_offset)
-        # else:
-        #     offset = None
             
         return mg, None
     
@@ -180,10 +169,33 @@ class TSGymRetrievalTool():
         
         x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
 
-        sim = self.periodic_batch_corr(
-            self.train_data_all_mg.flatten(start_dim=2), # G, T, S * C
-            x_mg.flatten(start_dim=2), # G, B, S * C
-        ) # G, B, T
+        if self.channel_independence:
+            # === 通道独立模式 (CI) ===
+            # 逻辑: 把 C 提到前面，和 G 融合。这意味着我们有 G*C 个独立的检索任务在并行运行
+            
+            # Query: (G, B, S, C) -> (G, C, B, S) -> (G*C, B, S)
+            query_feat = x_mg.permute(0, 3, 1, 2).reshape(-1, bsz, seq_len)
+            
+            # Database: (G, T, S, C) -> (G, C, T, S) -> (G*C, T, S)
+            db_feat = self.train_data_all_mg.permute(0, 3, 1, 2).reshape(-1, self.n_train, seq_len)
+            
+            # Target (Label): (G, T, P, C) -> (G, C, T, P) -> (G*C, T, P)
+            y_data_flat = self.y_data_all_mg.permute(0, 3, 1, 2).reshape(-1, self.n_train, self.pred_len)
+
+            # 计算相似度 (periodic_batch_corr 是通用的，它会自动处理第一维)
+            # Sim Shape: (G*C, B, T)
+            sim = self.periodic_batch_corr(db_feat, query_feat)
+            
+            num_parallel = self.n_period * self.channels
+        else:
+            # === 通道依赖模式 (Joint, 原有逻辑) ===
+            # 逻辑: 把 C 融合进特征维 S 里
+            y_data_flat = self.y_data_all_mg.flatten(start_dim=2) # (G, T, P*C)
+            sim = self.periodic_batch_corr(
+                self.train_data_all_mg.flatten(start_dim=2), # G, T, S * C
+                x_mg.flatten(start_dim=2), # G, B, S * C
+            ) # G, B, T
+            num_parallel = self.n_period
             
         if train:
             sliding_index = torch.arange(2 * (self.seq_len + self.pred_len) - 1).to(x.device)
@@ -195,11 +207,14 @@ class TSGymRetrievalTool():
 
             self_mask = torch.zeros((bsz, self.n_train)).to(x.device)
             self_mask = self_mask.scatter_(1, sliding_index, 1.)
-            self_mask = self_mask.unsqueeze(dim=0).repeat(self.n_period, 1, 1)
+            self_mask = self_mask.unsqueeze(dim=0).repeat(num_parallel, 1, 1)
             
             sim = sim.masked_fill_(self_mask.bool(), float('-inf')) # G, B, T
+            
 
-        sim = sim.reshape(self.n_period * bsz, self.n_train) # G X B, T
+        # Flatten for TopK (G*C*B or G*B)
+        sim = sim.reshape(num_parallel * bsz, self.n_train)
+        # sim = sim.reshape(self.n_period * bsz, self.n_train) # G X B, T
                 
         topm_index = torch.topk(sim, self.topm, dim=1).indices
         ranking_sim = torch.ones_like(sim) * float('-inf')
@@ -207,17 +222,27 @@ class TSGymRetrievalTool():
         rows = torch.arange(sim.size(0)).unsqueeze(-1).to(sim.device)
         ranking_sim[rows, topm_index] = sim[rows, topm_index]
         
-        sim = sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
-        ranking_sim = ranking_sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
+        sim = sim.reshape(num_parallel, bsz, self.n_train) # G, B, T
+        ranking_sim = ranking_sim.reshape(num_parallel, bsz, self.n_train) # G, B, T
 
         data_len, seq_len, channels = self.train_data_all.shape
             
         ranking_prob = F.softmax(ranking_sim / self.temperature, dim=2)
-        # ranking_prob = ranking_prob.detach().cpu() # G, B, T
-        
-        y_data_all = self.y_data_all_mg.flatten(start_dim=2) # G, T, P * C
-        
-        pred_from_retrieval = torch.bmm(ranking_prob, y_data_all).reshape(self.n_period, bsz, -1, channels)
+
+        # ranking_prob: (Parallel, B, T)
+        # y_data_flat:  (Parallel, T, Feature_Dim)
+        # CI 模式: (G*C, B, T) * (G*C, T, P) -> (G*C, B, P)
+        # Joint 模式: (G, B, T) * (G, T, P*C) -> (G, B, P*C)
+        pred_from_retrieval = torch.bmm(ranking_prob, y_data_flat)
+
+        if self.channel_independence:
+            # CI Output: (G*C, B, P) -> 还原为 (G, C, B, P) -> 转置为 (G, B, P, C)
+            pred_from_retrieval = pred_from_retrieval.reshape(self.n_period, self.channels, bsz, -1)
+            pred_from_retrieval = pred_from_retrieval.permute(0, 2, 3, 1) # G, B, P, C
+        else:
+            # Joint Output: (G, B, P*C) -> 还原为 (G, B, P, C)
+            pred_from_retrieval = pred_from_retrieval.reshape(self.n_period, bsz, -1, self.channels)
+
         pred_from_retrieval = pred_from_retrieval.to(x.device)
         
         return pred_from_retrieval

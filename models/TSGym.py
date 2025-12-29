@@ -1,18 +1,21 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from layers.Retrieval import TSGymRetrievalFusionBlock, TSGymRetrievalTool
-from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer
+from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer, Encoder_ori, LinearEncoder
 from layers.SelfAttention_Family import FullAttention, ProbAttention, DSAttention, FourierCrossAttention, AutoCorrelation
 from layers.SelfAttention_Family import AttentionLayer
 from layers.Embed import DataEmbedding_wo_pos, DataEmbedding, DataEmbedding_inverted, PatchEmbedding_wo_pos, PatchEmbedding
 from layers.StandardNorm import Normalize, DishTS
 from layers.SeriesDecom import series_decomp, series_decomp_multi, DFT_series_decomp
+from layers.xlstm_backbone import xLSTMBackbone
 import numpy as np
 from copy import deepcopy
 from transformers.models.gpt2.modeling_gpt2 import GPT2Model
 from models import TimeLLM, Moment
-
+import warnings
+warnings.filterwarnings("ignore")
 
 class FlattenHead(nn.Module):
     def __init__(self, n_vars, nf, target_window, head_dropout=0):
@@ -220,6 +223,19 @@ class Model(nn.Module):
         self.gym_encoder_only = eval(gym_encoder_only) if isinstance(gym_encoder_only, str) else gym_encoder_only
         self.gym_frozen = eval(gym_frozen) if isinstance(gym_frozen, str) else gym_frozen
         self.gym_rag = eval(gym_rag) if isinstance(gym_rag, str) else gym_rag
+        # Olinear Q-Mat
+        if not self.gym_series_sampling:
+            self.q_mat_dir = os.path.join(configs.root_path, getattr(configs, 'q_mat_dir', "ETTh1_96_ratio0.6.npy"))
+            self.q_out_mat_dir = os.path.join(configs.root_path, getattr(configs, 'q_out_mat_dir', "ETTh1_96_ratio0.6.npy"))
+        else:
+            self.q_out_mat_dir = os.path.join(configs.root_path, getattr(configs, 'q_out_mat_dir', "ETTh1_96_ratio0.6.npy"))
+            self.q_mat_dir = []
+            self.sampling_seqlen = []
+            for _seqlen_ratio in [1,2,4,8]:
+                _seqlen = self.seq_len // _seqlen_ratio
+                self.sampling_seqlen.append(_seqlen)
+                self.q_mat_dir.append(os.path.join(configs.root_path, getattr(configs, 'q_mat_dir', "q_mat.npy").replace(str(self.seq_len), str(_seqlen))))
+
 
         # build model
         self._build_series_preprocessing()
@@ -274,7 +290,7 @@ class Model(nn.Module):
         # channel-independent: no-patching: BxSxD -> (BxD)xSx1; patching: BxSxD -> (BxD)xS -> (BxD) x patch_num x patch_len
         if self.gym_channel_independent: # channel-independent
             if self.gym_input_embed == 'series-encoding': # CI + series-encoding
-                if self.gym_network_architecture in ['GRU']: # update 20251110 cc: 只有GRU不使用positional encoding
+                if self.gym_network_architecture in ['GRU', 'MLP']:
                     self.enc_embedding = DataEmbedding_wo_pos(1, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else DataEmbedding_wo_pos(
                         1, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout) # encoder only时为None节省显存
@@ -289,7 +305,7 @@ class Model(nn.Module):
                                                                                           for i in range(self.configs.down_sampling_layers + 1))
             elif self.gym_input_embed == 'series-patching': # CI + series-patching
                 stride, padding, self.patch_num, patch_len = calculate_patch_num(self.configs.seq_len)
-                if self.gym_network_architecture in ['GRU']: # update 20251110 cc: 只有GRU不使用positional encoding
+                if self.gym_network_architecture in ['GRU','MLP']:
                     self.enc_embedding = PatchEmbedding_wo_pos(d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
                                                                padding=padding, dropout=self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else PatchEmbedding_wo_pos(d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
@@ -306,7 +322,7 @@ class Model(nn.Module):
                     for i in range(self.configs.down_sampling_layers + 1):
                         seq_len_ = self.configs.seq_len // (self.configs.down_sampling_window ** i)
                         stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
-                        if self.gym_network_architecture in ['GRU']:
+                        if self.gym_network_architecture in ['GRU','MLP']:
                             enc_embedding_ = PatchEmbedding_wo_pos(d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
                                                                    padding=padding, dropout=self.configs.dropout)
                             dec_embedding_ = None if self.gym_encoder_only else PatchEmbedding_wo_pos(d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
@@ -328,8 +344,30 @@ class Model(nn.Module):
                 self.dec_embedding = None if self.gym_encoder_only else DataEmbedding_inverted(
                     self.configs.seq_len, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                 if self.series_sampling: raise NotImplementedError # CD + inverted-encoding + series-sampling not supported
+            elif self.gym_input_embed == 'ortho-encoding': # CD + ortho-encoding, from OLinear, update1228 cc
+                self.enc_embedding = nn.Linear(1, self.configs.d_model, bias=False)
+                Q_out_mat = torch.from_numpy(np.load(self.q_out_mat_dir)).to(torch.float32)
+                if not self.series_sampling:
+                    Q_mat = torch.from_numpy(np.load(self.q_mat_dir)).to(torch.float32).transpose(-1, -2)
+                    self.register_buffer('Q_mat', Q_mat)
+                    self.delta1 = nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, self.seq_len))
+                    self.ortho_input_encoder = nn.Linear(self.seq_len*self.configs.d_model, self.configs.d_model)
+                self.register_buffer('Q_out_mat', Q_out_mat)
+                self.dec_embedding = None
+                self.delta2 = nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, self.pred_len))
+                
+                if self.series_sampling: # CI + ortho-encoding + series_sampling
+                    # TODO: 暂时还不支持ortho-encoding+series sampling： 因为不同seqlen长度的qmat不一样。
+                    self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
+                    self.delta1 = nn.ParameterList([nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, _seqlen)) for _seqlen in self.sampling_seqlen])
+                    self.ortho_input_encoder = nn.ModuleList([nn.Linear(_seqlen*self.configs.d_model, self.configs.d_model) for _seqlen in self.sampling_seqlen])
+                    for i,_seqlen in enumerate(self.sampling_seqlen):
+                        Q_mat = torch.from_numpy(np.load(self.q_mat_dir[i])).to(torch.float32).transpose(-1, -2)
+                        assert Q_mat.shape[0] == _seqlen
+                        self.register_buffer(f'Q_mat_{i}', Q_mat)
+                        
             elif self.gym_input_embed == 'series-encoding': # CD + series-encoding
-                if self.gym_network_architecture in ['GRU']:
+                if self.gym_network_architecture in ['GRU','MLP']:
                     self.enc_embedding = DataEmbedding_wo_pos(self.configs.enc_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else DataEmbedding_wo_pos(
                         self.configs.dec_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
@@ -508,10 +546,33 @@ class Model(nn.Module):
             if not self.gym_encoder_only:
                 raise NotImplementedError
             elif self.gym_network_architecture == 'MLP':
-                self.encoder = DNN(self.configs)
+                if self.gym_attn == 'DNN': # gym_attn is not real attention, just the network-architecture
+                    self.encoder = DNN(self.configs)
+                elif self.gym_attn == 'NormLin': # From Olinear
+                    self.encoder = Encoder_ori(
+                        [
+                            LinearEncoder(
+                                d_model=self.configs.d_model, d_ff=self.configs.d_ff, CovMat=None,
+                                dropout=self.configs.dropout, activation=self.configs.activation, token_num=self.configs.enc_in,
+                            ) for _ in range(self.configs.e_layers)
+                        ],
+                        norm_layer=nn.LayerNorm(self.configs.d_model),
+                        one_output=False,
+                        CKA_flag=False
+                    )
+                else: # default is DNN
+                    self.encoder = DNN(self.configs)
                 self.decoder = None
             elif self.gym_network_architecture == 'GRU':
-                self.encoder = GRU(self.configs)
+                if self.gym_attn == 'xLSTM':
+                    self.encoder = xLSTMBackbone(
+                        d_model=self.configs.d_model, 
+                        num_layers=self.configs.e_layers, 
+                        num_heads=self.configs.n_heads, 
+                        dropout=self.configs.dropout
+                        )
+                else:
+                    self.encoder = GRU(self.configs)
                 self.decoder = None
             else:
                 raise NotImplementedError
@@ -718,6 +779,65 @@ class Model(nn.Module):
                     ) # (B, C, d_model) -> (B, num_classes)
                 else:
                     raise NotImplementedError
+            elif self.gym_input_embed == 'ortho-encoding':
+                if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+                    self.decoder_projection = nn.Linear(self.configs.d_model, self.pred_len * self.configs.d_model)
+                    self.head = nn.Sequential(
+                        nn.Linear(self.pred_len * self.configs.d_model, self.configs.d_ff),
+                        nn.GELU(),
+                        nn.Linear(self.configs.d_ff, self.pred_len)
+                    )
+                elif self.task_name == 'anomaly_detection' or self.task_name == 'imputation': # 异常检测/插补 做重构任务
+                    self.head = nn.Sequential(
+                        nn.Linear(self.configs.d_model, self.seq_len * self.configs.d_model),
+                        nn.Linear(self.seq_len * self.configs.d_model, self.configs.d_ff),
+                        nn.GELU(),
+                        nn.Linear(self.configs.d_ff, self.seq_len)
+                    )
+                elif self.task_name == 'finance_regressing':
+                    self.head = nn.Sequential(
+                        nn.Linear(self.configs.enc_in*self.configs.d_model, self.configs.d_ff),
+                        nn.GELU(),
+                        nn.Linear(self.configs.d_ff, 1)
+                    )
+                else:
+                    raise NotImplementedError
+                if self.gym_series_sampling:
+                    if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast': # 预测任务
+                        self.decoder_projection = nn.Linear(self.configs.d_model, self.pred_len * self.configs.d_model)
+                        self.head = torch.nn.ModuleList(
+                        [
+                            nn.Sequential(
+                                nn.Linear(self.pred_len * self.configs.d_model, self.configs.d_ff),
+                                nn.GELU(),
+                                nn.Linear(self.configs.d_ff, self.pred_len)
+                            )
+                            for i in range(self.configs.down_sampling_layers + 1)
+                        ])
+                    elif self.task_name == 'anomaly_detection' or self.task_name == 'imputation': # 异常检测/插补 做重构任务
+                        # TODO：classification-based anomaly detection
+                        self.head = torch.nn.ModuleList(
+                        [
+                            nn.Sequential(
+                                nn.Linear(self.configs.d_model, self.seq_len * self.configs.d_model),
+                                nn.Linear(self.seq_len * self.configs.d_model, self.configs.d_ff),
+                                nn.GELU(),
+                                nn.Linear(self.configs.d_ff, self.seq_len)
+                            )
+                            for i in range(self.configs.down_sampling_layers + 1)
+                        ])
+                    elif self.task_name == 'finance_regressing':
+                        self.head = torch.nn.ModuleList(
+                        [
+                            nn.Sequential(
+                                nn.Linear(self.configs.enc_in*self.configs.d_model, self.configs.d_ff),
+                                nn.GELU(),
+                                nn.Linear(self.configs.d_ff, 1)
+                            )
+                            for i in range(self.configs.down_sampling_layers + 1)
+                        ])
+                    else:
+                        raise NotImplementedError
             else:
                 raise NotImplementedError
     
@@ -842,6 +962,8 @@ class Model(nn.Module):
         if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
             x_enc = [_.permute(0, 2, 1).contiguous().reshape(self.B * self.C, _.shape[1], 1) for _ in x_enc]
             if x_mark_enc is not None: x_mark_enc = [_.repeat(self.C, 1, 1) for _ in x_mark_enc]
+        if self.gym_input_embed == 'ortho-encoding':
+            x_enc = [_.permute(0, 2, 1).unsqueeze(-1) for _ in x_enc] # B,C,S,1
         # learn tau and delta for non-stationary attention (if necessary)
         if self.gym_attn == 'destationary-attention':
             tau, delta = [], []
@@ -885,6 +1007,8 @@ class Model(nn.Module):
         if self.gym_channel_independent and self.gym_input_embed  == 'series-encoding':
             x_enc = x_enc.permute(0, 2, 1).contiguous().reshape(self.B * self.C, self.S, 1)
             if x_mark_enc is not None: x_mark_enc = x_mark_enc.repeat(self.C, 1, 1)
+        if self.gym_input_embed == 'ortho-encoding':
+            x_enc = x_enc.permute(0,2,1).unsqueeze(-1) # B,C,S,1
         # learn tau and delta for non-stationary attention (if necessary)
         if self.gym_attn == 'destationary-attention':
             mean_enc = x_enc.mean(1, keepdim=True).detach()  # B x 1 x E
@@ -1038,6 +1162,15 @@ class Model(nn.Module):
             for i, x_enc_ in enumerate(x_enc):
                 enc_out_, self.n_vars = self.enc_embedding[i](x_enc_)
                 enc_out.append(enc_out_)
+        elif self.gym_input_embed == 'ortho-encoding':
+            # x_enc: [B,C,S,1] -> [B,C,S,D]
+            enc_out = [self.enc_embedding[i](x_enc[i]) for i in range(len(x_enc))]
+            # [B,C,D,S]
+            enc_out = [_.permute(0,1,3,2) for _ in enc_out]
+            # [B,C,D,S]
+            enc_out = [torch.einsum('bndt,tv->bndv', _, getattr(self, f"Q_mat_{i}")) + self.delta1[i] for i,_ in enumerate(enc_out)]
+            # [B,C,D]
+            enc_out = [self.ortho_input_encoder[i](_.flatten(start_dim=-2)) for i,_ in enumerate(enc_out)]
         else:
             raise NotImplementedError
         # attention in encoder, the shape of enc_out
@@ -1071,6 +1204,13 @@ class Model(nn.Module):
             x_enc = x_enc.permute(0, 2, 1) # BxSxD -> BxDxS
             # u: [bs * nvars x patch_num x d_model]
             enc_out, self.n_vars = self.enc_embedding(x_enc)
+        elif self.gym_input_embed == 'ortho-encoding':
+            # B,C,S,1 -> B,C,S,D -> B,C,D,S
+            enc_out = self.enc_embedding(x_enc).permute(0,1,3,2)
+            # B,C,D,S
+            enc_out = torch.einsum('bndt,tv->bndv', enc_out, self.Q_mat)
+            # B,C,D,S -> B,C,D
+            enc_out = self.ortho_input_encoder(enc_out.flatten(start_dim=-2))
         else:
             raise NotImplementedError
         # attention in encoder, the shape of enc_out
@@ -1094,6 +1234,19 @@ class Model(nn.Module):
                 dec_out = [self.head[i](_) for i, _ in enumerate(enc_out)]
                 dec_out = [_.permute(0, 2, 1) for _ in dec_out]
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+            elif self.gym_input_embed == 'ortho-encoding':
+                # 暂时还不支持这个组合
+                # B,C,D -> B,C,predlen*D
+                # print(len(enc_out))
+                # print(self.decoder_projection)
+                dec_out = [self.decoder_projection(_) for i,_ in enumerate(enc_out)]
+                # reshape dot product
+                dec_out = [_.reshape(self.B, self.C, self.configs.d_model, self.pred_len) for _ in dec_out]
+                dec_out = [torch.einsum('bndt,tv->bndv', _, self.Q_out_mat) + self.delta2 for i,_ in enumerate(dec_out)]
+                dec_out = [self.head[i](_.flatten(start_dim=-2)) for i,_ in enumerate(dec_out)]
+                dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+                # B,pred,C
+                dec_out = dec_out.permute(0, 2, 1).contiguous()
             else:
                 raise NotImplementedError
         else: # encoder-decoder
@@ -1125,6 +1278,10 @@ class Model(nn.Module):
                 enc_out = [torch.reshape(_, (-1, self.n_vars, _.shape[-1])) for _ in enc_out] # B, C, dmodel
                 dec_out = [self.head[i](_) for i, _ in enumerate(enc_out)] # B, 1
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+            elif self.gym_input_embed == 'ortho-encoding':
+                # B,C,D -> B,C*D -> B
+                dec_out = [self.head[i](_.flatten(start_dim=-2)) for i,_ in enumerate(enc_out)]
+                dec_out = torch.stack(dec_out, dim=-1).sum(-1)
             else:
                 raise NotImplementedError
         else: # encoder-decoder
@@ -1151,6 +1308,19 @@ class Model(nn.Module):
                 enc_out = enc_out.permute(0, 1, 3, 2)
                 dec_out = self.head(enc_out)  # B x D x pred_len
                 dec_out = dec_out.permute(0, 2, 1) # B x pred_len x D
+            elif self.gym_input_embed == 'ortho-encoding':
+                # print(f"decoding shape:{enc_out.shape}")
+                # B,C,D -> B,C,D*predlen
+                dec_out = self.decoder_projection(enc_out)
+                # print(f"decoding shape:{dec_out.shape}")
+                dec_out = dec_out.reshape(self.B, self.C, self.configs.d_model, self.pred_len)
+                # print(f"decoding shape:{dec_out.shape}") : B,C,dmodel,predlen
+                dec_out = torch.einsum('bndt,tv->bndv', dec_out, self.Q_out_mat) + self.delta2
+                if self.gym_feature_attn != 'null': dec_out = dec_out + enc_out_fa.permute(0,2,1).unsqueeze(-2)
+                # print(f"decoding shape:{dec_out.shape}")
+                dec_out = self.head(dec_out.flatten(start_dim=-2))
+                # B,pred,C
+                dec_out = dec_out.permute(0, 2, 1).contiguous()
             else:
                 raise NotImplementedError
         else: # encoder-decoder
@@ -1210,6 +1380,9 @@ class Model(nn.Module):
                 enc_out = torch.reshape(enc_out, (-1, self.n_vars, enc_out.shape[-1]))
                 # z: [bs x nvars x d_model]
                 dec_out = self.head(enc_out)  # B x 1
+            elif self.gym_input_embed == 'ortho-encoding':
+                # enc_out: B,C,dmodel
+                dec_out = self.head(enc_out.flatten(start_dim=-2))
             else:
                 raise NotImplementedError
         else: # encoder-decoder
@@ -1261,6 +1434,7 @@ class Model(nn.Module):
         # -- if series-patching, each with shape (B*C, patch_num, d_model)
         if self.series_sampling and self.gym_series_decomp == 'None':
             enc_out = self.f_series_encoding_wodecomposition_sampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
+        
         # f_series_encoding_wodecomposition_wosampling:
         # return:
         # - enc_out: encoder output
@@ -1269,7 +1443,6 @@ class Model(nn.Module):
         # -- if inverted-encoding, (B, C, d_model)
         if not self.series_sampling and self.gym_series_decomp == 'None':
             enc_out = self.f_series_encoding_wodecomposition_wosampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
-            
         # 【3】series decoding
         # f_series_decoing_sampling or f_series_decoding_wosampling:
         if self.series_sampling:
@@ -1299,6 +1472,7 @@ class Model(nn.Module):
         # - enc_out_fa: feature attention output
         if not self.series_sampling:
             x_enc, x_mark_enc, tau, delta, enc_out_fa = self.f_series_preprocessing_wosampling(x_enc, x_mark_enc)
+        
 
         # 【2】series encoding
         # f_series_encoding_decomposition_sampling:
@@ -1331,6 +1505,7 @@ class Model(nn.Module):
         # -- if inverted-encoding, (B, S, d_model)
         if not self.series_sampling and self.gym_series_decomp == 'None':
             enc_out = self.f_series_encoding_wodecomposition_wosampling(x_enc, x_mark_enc, tau, delta, enc_out_fa)
+        
             
         # 【3】series decoding
         # f_series_decoing_sampling or f_series_decoding_wosampling:
@@ -1338,6 +1513,7 @@ class Model(nn.Module):
             dec_out = self.f_series_decoing_sampling_regressing(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data)
         else:
             dec_out = self.f_series_decoding_wosampling_regressing(enc_out, enc_out_fa, x_dec, x_mark_dec, rag_raw_data)
+        
         # return: dec_out
         dec_out = dec_out.flatten()
         assert len(dec_out) == self.B

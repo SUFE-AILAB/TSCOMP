@@ -91,7 +91,7 @@ if __name__ == '__main__':
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
-    parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
+    parser.add_argument('--train_epochs', type=int, default=30, help='train epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
     parser.add_argument('--patience', type=int, default=3, help='early stopping patience')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
@@ -178,6 +178,10 @@ if __name__ == '__main__':
     # RAFT
     parser.add_argument('--n_period', type=int, default=3, help='Number of Periods')
     parser.add_argument('--topm', type=int, default=20, help='Number of Retrievals')
+    
+    # OLinear
+    parser.add_argument('--q_mat_dir', type=str, default='q_mat.npy', help='Olinear q_mat_dir')
+    parser.add_argument('--q_out_mat_dir', type=str, default='q_out_mat.npy', help='Olinear q_out_mat_dir')
     
     args = parser.parse_args()
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
@@ -299,6 +303,7 @@ if __name__ == '__main__':
                 ]
             )
             args.logger = logging.getLogger()
+            # exp = Exp(args)  # set experiments
             try:
                 exp = Exp(args)  # set experiments
             except Exception as error:
@@ -321,8 +326,8 @@ if __name__ == '__main__':
             else:
                 gym_type='non_Transformer'
             folder_pathGym = f'./results_{args.task_name}ing/results_{gym_type}/{dataset}/{setting}/'
-            
             if not os.path.exists(folder_path1) and not os.path.exists(folder_path2) and not os.path.exists(folder_pathGym):
+                exp.train(setting)
                 try:
                     monitor.start()
                     args.logger.info('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))

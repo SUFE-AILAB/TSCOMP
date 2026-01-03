@@ -13,6 +13,7 @@ from layers.xlstm_backbone import xLSTMBackbone
 import numpy as np
 from copy import deepcopy
 from transformers.models.gpt2.modeling_gpt2 import GPT2Model
+from transformers import AutoModelForCausalLM
 from models import TimeLLM, Moment
 import warnings
 warnings.filterwarnings("ignore")
@@ -172,6 +173,14 @@ class TSFM(nn.Module):
         elif network_architecture == 'TSFM-Moment':
             self.encoder = Moment.Model(frozen=frozen)
             self.proj = nn.Linear(768, configs.d_model)
+        elif network_architecture == 'Time-MoE':
+            self.encoder = AutoModelForCausalLM.from_pretrained(
+                './models/llm/Time-MoE',
+                device_map="cpu",  # use "cpu" for CPU inference, and "cuda" for GPU inference.
+                trust_remote_code=True,
+                use_cache=False
+            )
+            self.proj = nn.Linear(768, configs.d_model)
         else:
             raise NotImplementedError
 
@@ -182,6 +191,10 @@ class TSFM(nn.Module):
             x = self.proj(x) # 768 -> d_model
         elif self.network_architecture == 'TSFM-Timer':
             x, _ = self.encoder(x)
+        elif self.network_architecture == 'Time-MoE':
+            x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1])) # padding to 768
+            x = self.encoder(inputs_embeds=x, output_hidden_states=True).hidden_states[-1]
+            x = self.proj(x) # 768 -> d_model
         else:
             raise NotImplementedError
         return x, None

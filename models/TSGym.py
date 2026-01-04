@@ -236,6 +236,11 @@ class TSFM(nn.Module):
 # Update 20251109 cc: 重构模型框架，将各个模块解耦方便后续扩展
 # Update 20251226 ls:增加rag组件
 # Update 20251218 cc: 加入回归任务
+def get_q_mat_path(seqlen, predlen, dataset_name):
+    ratio = 0.6 if dataset_name in ['ETTh1','ETTh2','ETTm1','ETTm2'] else 0.7 
+    q_mat_path = f"{dataset_name}_{seqlen}_ratio{ratio}.npy"
+    q_out_mat_path = f"{dataset_name}_{predlen}_ratio{ratio}.npy"
+    return q_mat_path, q_out_mat_path
 
 class Model(nn.Module):
     def __init__(self, configs,
@@ -272,16 +277,17 @@ class Model(nn.Module):
         self.gym_rag = eval(gym_rag) if isinstance(gym_rag, str) else gym_rag
         # Olinear Q-Mat
         if not self.gym_series_sampling:
-            self.q_mat_dir = os.path.join(configs.root_path, getattr(configs, 'q_mat_dir', "ETTh1_96_ratio0.6.npy"))
-            self.q_out_mat_dir = os.path.join(configs.root_path, getattr(configs, 'q_out_mat_dir', "ETTh1_96_ratio0.6.npy"))
+            self.q_mat_dir, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0])
+            self.q_mat_dir, self.q_out_mat_dir = os.path.join(configs.root_path, self.q_mat_dir), os.path.join(configs.root_path, self.q_out_mat_dir)
         else:
-            self.q_out_mat_dir = os.path.join(configs.root_path, getattr(configs, 'q_out_mat_dir', "ETTh1_96_ratio0.6.npy"))
+            _, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0])
             self.q_mat_dir = []
             self.sampling_seqlen = []
             for _seqlen_ratio in [1,2,4,8]:
                 _seqlen = self.seq_len // _seqlen_ratio
                 self.sampling_seqlen.append(_seqlen)
-                self.q_mat_dir.append(os.path.join(configs.root_path, getattr(configs, 'q_mat_dir', "q_mat.npy").replace(str(self.seq_len), str(_seqlen))))
+                _qmat_path, _ = get_q_mat_path(_seqlen, self.pred_len, configs.data_path.split('.')[0])
+                self.q_mat_dir.append(os.path.join(configs.root_path, _qmat_path))
 
 
         # build model
@@ -345,11 +351,13 @@ class Model(nn.Module):
                     self.enc_embedding = DataEmbedding(1, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else DataEmbedding(
                         1, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout) # encoder only时为None节省显存
+                self.enc_embedding_S = self.seq_len # enc_in tensor 的三元组的中间维度
                 
                 if self.series_sampling: # CI + series-encoding + series-sampling
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
                     self.dec_embedding = None if self.gym_encoder_only else nn.ModuleList(deepcopy(self.dec_embedding) 
                                                                                           for i in range(self.configs.down_sampling_layers + 1))
+                    self.enc_embedding_S = self.sampling_seqlen # enc_in tensor 的三元组的中间维度
             elif self.gym_input_embed == 'series-patching': # CI + series-patching
                 stride, padding, self.patch_num, patch_len = calculate_patch_num(self.configs.seq_len)
                 if self.gym_network_architecture in ['GRU','MLP']:
@@ -362,10 +370,12 @@ class Model(nn.Module):
                                                         padding=padding, dropout=self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else PatchEmbedding(d_model=self.configs.d_model, patch_len=patch_len, 
                                                                                            stride=stride, padding=padding, dropout=self.configs.dropout)
+                self.enc_embedding_S = self.patch_num # enc_in tensor 的三元组的中间维度
                 
                 if self.series_sampling: # CI + series-patching + series-sampling
                     self.enc_embedding = torch.nn.ModuleList()
                     self.dec_embedding = None if self.gym_encoder_only else torch.nn.ModuleList()
+                    self.enc_embedding_S = []
                     for i in range(self.configs.down_sampling_layers + 1):
                         seq_len_ = self.configs.seq_len // (self.configs.down_sampling_window ** i)
                         stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
@@ -382,6 +392,7 @@ class Model(nn.Module):
                             
                         self.enc_embedding.append(enc_embedding_)
                         if not self.gym_encoder_only: self.dec_embedding.append(dec_embedding_)
+                        self.enc_embedding_S.append(patch_num)
                     
                     self.enc_embedding = nn.ModuleList(self.enc_embedding)
                     self.dec_embedding = None if self.gym_encoder_only else nn.ModuleList(self.dec_embedding)
@@ -398,10 +409,11 @@ class Model(nn.Module):
                                                         padding=padding, dropout=self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else PatchEmbedding_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, 
                                                                                            stride=stride, padding=padding, dropout=self.configs.dropout)
-                
+                self.enc_embedding_S = self.patch_num
                 if self.series_sampling: # CI + series-patching + series-sampling
                     self.enc_embedding = torch.nn.ModuleList()
                     self.dec_embedding = None if self.gym_encoder_only else torch.nn.ModuleList()
+                    self.enc_embedding_S = []
                     for i in range(self.configs.down_sampling_layers + 1):
                         seq_len_ = self.configs.seq_len // (self.configs.down_sampling_window ** i)
                         stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
@@ -418,6 +430,7 @@ class Model(nn.Module):
                             
                         self.enc_embedding.append(enc_embedding_)
                         if not self.gym_encoder_only: self.dec_embedding.append(dec_embedding_)
+                        self.enc_embedding_S.append(patch_num)
                     
                     self.enc_embedding = nn.ModuleList(self.enc_embedding)
                     self.dec_embedding = None if self.gym_encoder_only else nn.ModuleList(self.dec_embedding)
@@ -426,6 +439,7 @@ class Model(nn.Module):
                 self.dec_embedding = None if self.gym_encoder_only else DataEmbedding_inverted(
                     self.configs.seq_len, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                 if self.series_sampling: raise NotImplementedError # CD + inverted-encoding + series-sampling not supported
+                self.enc_embedding_S = self.configs.enc_in+4 if self.gym_x_mark else self.configs.enc_in
             elif self.gym_input_embed == 'ortho-encoding': # CD + ortho-encoding, from OLinear, update1228 cc
                 self.enc_embedding = nn.Linear(1, self.configs.d_model, bias=False)
                 Q_out_mat = torch.from_numpy(np.load(self.q_out_mat_dir)).to(torch.float32)
@@ -437,15 +451,18 @@ class Model(nn.Module):
                 self.register_buffer('Q_out_mat', Q_out_mat)
                 self.dec_embedding = None
                 self.delta2 = nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, self.pred_len))
+                self.enc_embedding_S = self.configs.enc_in+4 if self.gym_x_mark else self.configs.enc_in
                 
-                if self.series_sampling: # CI + ortho-encoding + series_sampling
+                if self.series_sampling: # CD + ortho-encoding + series_sampling
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
                     self.delta1 = nn.ParameterList([nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, _seqlen)) for _seqlen in self.sampling_seqlen])
                     self.ortho_input_encoder = nn.ModuleList([nn.Linear(_seqlen*self.configs.d_model, self.configs.d_model) for _seqlen in self.sampling_seqlen])
+                    self.enc_embedding_S = []
                     for i,_seqlen in enumerate(self.sampling_seqlen):
                         Q_mat = torch.from_numpy(np.load(self.q_mat_dir[i])).to(torch.float32).transpose(-1, -2)
                         assert Q_mat.shape[0] == _seqlen
                         self.register_buffer(f'Q_mat_{i}', Q_mat)
+                        self.enc_embedding_S.append(self.configs.enc_in+4 if self.gym_x_mark else self.configs.enc_in)
             elif self.gym_input_embed == 'series-encoding': # CD + series-encoding
                 if self.gym_network_architecture in ['GRU','MLP']:
                     self.enc_embedding = DataEmbedding_wo_pos(self.configs.enc_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
@@ -455,10 +472,12 @@ class Model(nn.Module):
                     self.enc_embedding = DataEmbedding(self.configs.enc_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                     self.dec_embedding = None if self.gym_encoder_only else DataEmbedding(
                         self.configs.dec_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
+                self.enc_embedding_S = self.seq_len
                 if self.series_sampling: # CD + series-encoding + series-sampling
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
                     self.dec_embedding = None if self.gym_encoder_only else nn.ModuleList(deepcopy(self.dec_embedding) 
                                                                                           for i in range(self.configs.down_sampling_layers + 1))
+                    self.enc_embedding_S = self.sampling_seqlen
             else:
                 raise NotImplementedError
 
@@ -629,17 +648,34 @@ class Model(nn.Module):
                 if self.gym_attn == 'DNN': # gym_attn is not real attention, just the network-architecture
                     self.encoder = DNN(self.configs)
                 elif self.gym_attn == 'NormLin': # From Olinear
-                    self.encoder = Encoder_ori(
-                        [
-                            LinearEncoder(
-                                d_model=self.configs.d_model, d_ff=self.configs.d_ff, CovMat=None,
-                                dropout=self.configs.dropout, activation=self.configs.activation, token_num=self.configs.enc_in,
-                            ) for _ in range(self.configs.e_layers)
-                        ],
-                        norm_layer=nn.LayerNorm(self.configs.d_model),
-                        one_output=False,
-                        CKA_flag=False
-                    )
+                    if not self.gym_series_sampling: # NormLin + nosampling
+                        self.encoder = Encoder_ori(
+                            [
+                                LinearEncoder(
+                                    d_model=self.configs.d_model, d_ff=self.configs.d_ff, CovMat=None,
+                                    dropout=self.configs.dropout, activation=self.configs.activation, token_num=self.enc_embedding_S,
+                                ) for _ in range(self.configs.e_layers)
+                            ],
+                            norm_layer=nn.LayerNorm(self.configs.d_model),
+                            one_output=False,
+                            CKA_flag=False
+                        )
+                    else:
+                        self.encoder = nn.ModuleList() # NormLin + sampling
+                        for _enc_embedding_S in self.enc_embedding_S:
+                            # print(self.enc_embedding_S)
+                            _encoder = Encoder_ori(
+                                [
+                                    LinearEncoder(
+                                        d_model=self.configs.d_model, d_ff=self.configs.d_ff, CovMat=None,
+                                        dropout=self.configs.dropout, activation=self.configs.activation, token_num=_enc_embedding_S,
+                                    ) for _ in range(self.configs.e_layers)
+                                ],
+                                norm_layer=nn.LayerNorm(self.configs.d_model),
+                                one_output=False,
+                                CKA_flag=False
+                            )
+                            self.encoder.append(deepcopy(_encoder))
                 else: # default is DNN
                     self.encoder = DNN(self.configs)
                 self.decoder = None
@@ -664,12 +700,18 @@ class Model(nn.Module):
             self.encoder_seasonal = deepcopy(self.encoder)
             self.encoder_trend = deepcopy(self.encoder)
             if self.series_sampling:
-                self.encoder_seasonal = nn.ModuleList(deepcopy(self.encoder_seasonal) for i in range(self.configs.down_sampling_layers + 1))
-                self.encoder_trend = nn.ModuleList(deepcopy(self.encoder_trend) for i in range(self.configs.down_sampling_layers + 1))
+                if self.gym_attn == 'NormLin':
+                    pass
+                else:
+                    self.encoder_seasonal = nn.ModuleList(deepcopy(self.encoder_seasonal) for i in range(self.configs.down_sampling_layers + 1))
+                    self.encoder_trend = nn.ModuleList(deepcopy(self.encoder_trend) for i in range(self.configs.down_sampling_layers + 1))
             del self.encoder
         else:
             if self.series_sampling:
-                self.encoder = nn.ModuleList(deepcopy(self.encoder) for i in range(self.configs.down_sampling_layers + 1))
+                if self.gym_attn == 'NormLin':
+                    pass
+                else:
+                    self.encoder = nn.ModuleList(deepcopy(self.encoder) for i in range(self.configs.down_sampling_layers + 1))
                 if self.decoder is not None:
                     self.decoder = nn.ModuleList(deepcopy(self.decoder) for i in range(self.configs.down_sampling_layers + 1))
             else:
@@ -1350,6 +1392,7 @@ class Model(nn.Module):
         # attention in encoder, the shape of enc_out
         # no patching: [bs x seq_len x d_model]
         # patching: [(bs * nvars) x patch_num x d_model]
+        print(enc_out.shape)
         enc_out, _ = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
         return enc_out
 

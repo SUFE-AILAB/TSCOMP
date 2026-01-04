@@ -172,48 +172,30 @@ def log_end(exp_setting, result_metric, max_gpu_mem, error_msg=None, DB_PATH='ex
               exp_setting))
         conn.commit()
     
-# GPU 显存使用
-pynvml.nvmlInit()
 class GPUMemoryMonitor:
-    def __init__(self, interval=1):
-        self.interval = interval
-        self.max_mem = 0
-        self.running = False
-        self.handle = None
-
-        pid = os.getpid()
-        device_count = pynvml.nvmlDeviceGetCount()
-
-        # 找到当前进程所在 GPU
-        for i in range(device_count):
-            h = pynvml.nvmlDeviceGetHandleByIndex(i)
-            infos = pynvml.nvmlDeviceGetComputeRunningProcesses(h)
-            for p in infos:
-                if p.pid == pid:
-                    self.handle = h
-                    break
-            if self.handle:
-                break
+    def __init__(self, device):
+        # 确保 device 是正确的 torch.device 对象
+        self.device = device
+        self.max_allocated = 0
+        self.max_reserved = 0
 
     def start(self):
-        if not self.handle:
-            print("No GPU process found.")
-            return
-
-        self.running = True
-        def run():
-            while self.running:
-                infos = pynvml.nvmlDeviceGetComputeRunningProcesses(self.handle)
-                for p in infos:
-                    if p.pid == os.getpid():
-                        self.max_mem = max(self.max_mem, p.usedGpuMemory / 1024**2)
-                time.sleep(self.interval)
-
-        self.thread = threading.Thread(target=run)
-        self.thread.start()
+        """
+        在任务开始前重置显存峰值计数器。
+        如果不重置，结果将受到之前运行任务的影响。
+        """
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats(self.device)
 
     def stop(self):
-        self.running = False
-        if hasattr(self, "thread"):
-            self.thread.join()
-        return self.max_mem
+        """
+        任务结束，返回单位为 MB 的显存峰值数据。
+        """
+        if torch.cuda.is_available():
+            
+            # 2. PyTorch 缓存占用的峰值 (nvidia-smi 显示的量通常接近这个)
+            self.max_reserved = torch.cuda.max_memory_reserved(self.device) / 1024**2
+            
+            return round(self.max_reserved, 3)
+        else:
+            return 0.0

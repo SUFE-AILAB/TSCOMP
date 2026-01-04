@@ -281,6 +281,7 @@ class Model(nn.Module):
             self.q_mat_dir, self.q_out_mat_dir = os.path.join(configs.root_path, self.q_mat_dir), os.path.join(configs.root_path, self.q_out_mat_dir)
         else:
             _, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0])
+            self.q_out_mat_dir = os.path.join(configs.root_path, self.q_out_mat_dir)
             self.q_mat_dir = []
             self.sampling_seqlen = []
             for _seqlen_ratio in [1,2,4,8]:

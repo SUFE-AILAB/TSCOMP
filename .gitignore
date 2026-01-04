@@ -154,10 +154,12 @@ meta_learner_cc/*
 nohup.out
 **/*.sh
 *.db
+*.log
 log
 logs/
 nohup_logs/
 models/llm
-notebooks/
+notebooks/ls_figures/
+notebooks/V100_log/
 plots_multivariate/
 synthetic_series_multivariate/

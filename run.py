@@ -173,7 +173,7 @@ if __name__ == '__main__':
     parser.add_argument('--offload', type=int, default=0)
 
     # perturb_files
-    parser.add_argument('--add_perturb_data', action='store_true', help='add_perturb_data to test', default=True)
+    parser.add_argument('--add_perturb_data', action='store_true', help='add_perturb_data to test', default=False)
 
     # RAFT
     parser.add_argument('--n_period', type=int, default=3, help='Number of Periods')

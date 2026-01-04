@@ -6,7 +6,7 @@ from layers.Retrieval import TSGymRetrievalFusionBlock, TSGymRetrievalTool
 from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer, Encoder_ori, LinearEncoder
 from layers.SelfAttention_Family import FullAttention, ProbAttention, DSAttention, FourierCrossAttention, AutoCorrelation
 from layers.SelfAttention_Family import AttentionLayer
-from layers.Embed import DataEmbedding_wo_pos, DataEmbedding, DataEmbedding_inverted, PatchEmbedding_wo_pos, PatchEmbedding
+from layers.Embed import DataEmbedding_wo_pos, DataEmbedding, DataEmbedding_inverted, PatchEmbedding_wo_pos, PatchEmbedding, PatchEmbedding_wo_pos_CD, PatchEmbedding_CD
 from layers.StandardNorm import Normalize, DishTS
 from layers.SeriesDecom import series_decomp, series_decomp_multi, DFT_series_decomp
 from layers.xlstm_backbone import xLSTMBackbone
@@ -30,6 +30,27 @@ class FlattenHead(nn.Module):
         x = self.flatten(x)
         x = self.linear(x)
         x = self.dropout(x)
+        return x
+
+class PatchingHead_CD(nn.Module):
+    def __init__(self, d_model, n_vars, pred_len, patch_num, patch_len, head_dropout=0):
+        super().__init__()
+        # B, patch_num, d_model -> B, patch_num, C*patch_len -> B, NP, C, PL -> B, C, NP, PL -> B, C, NP*PL -> B,C,predlen
+        self.n_vars = n_vars
+        self.patch_len = patch_len
+        self.patch_num = patch_num
+        self.pred_len = pred_len
+        self.linear1 = nn.Linear(d_model, n_vars * patch_len)
+        self.linear2 = nn.Linear(patch_num * patch_len, pred_len)
+        self.dropout = nn.Dropout(head_dropout)
+    
+    def forward(self, x):  # x: [bs x patch_num x d_model]
+        assert self.patch_num == x.shape[1]
+        x = self.linear1(x)  # B, patch_num, C*patch_len
+        x = self.dropout(x)
+        x = x.view(x.shape[0], self.patch_num, self.n_vars, self.patch_len)  # B, patch_num, C, patch_len
+        x = x.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2)  # B, C, patch_num, patch_len # B, C, NP*PL 
+        x = self.linear2(x)  # B,C,predlen
         return x
 
 def calculate_patch_num(seq_len, patch_len=8):
@@ -170,15 +191,24 @@ class TSFM(nn.Module):
                         param.requires_grad = False
             else:
                 pass
+        elif network_architecture == 'TSFM-TimerXL':
+            raise NotImplementedError
         elif network_architecture == 'TSFM-Moment':
             self.encoder = Moment.Model(frozen=frozen)
             self.proj = nn.Linear(768, configs.d_model)
-        elif network_architecture == 'Time-MoE':
+        elif network_architecture == 'TSFM-TimeMoE':
             self.encoder = AutoModelForCausalLM.from_pretrained(
                 './models/llm/Time-MoE',
                 device_map="cpu",  # use "cpu" for CPU inference, and "cuda" for GPU inference.
                 trust_remote_code=True,
                 use_cache=False
+            )
+            self.proj = nn.Linear(768, configs.d_model)
+        elif network_architecture == 'TSFM-Chronos':
+            from chronos import Chronos2Model
+            self.encoder = Chronos2Model.from_pretrained(
+                "./models/llm/Chronos",
+                device_map="cpu"
             )
             self.proj = nn.Linear(768, configs.d_model)
         else:
@@ -191,9 +221,13 @@ class TSFM(nn.Module):
             x = self.proj(x) # 768 -> d_model
         elif self.network_architecture == 'TSFM-Timer':
             x, _ = self.encoder(x)
-        elif self.network_architecture == 'Time-MoE':
+        elif self.network_architecture == 'TSFM-TimeMoE':
             x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1])) # padding to 768
             x = self.encoder(inputs_embeds=x, output_hidden_states=True).hidden_states[-1]
+            x = self.proj(x) # 768 -> d_model
+        elif self.network_architecture == 'TSFM-Chronos':
+            x = torch.nn.functional.pad(x, (0, 768 - x.shape[-1])) # padding to 768
+            x = self.encoder.encoder(inputs_embeds=x, group_ids=torch.arange(x.shape[0]).to(x.device), output_attentions=False).last_hidden_state
             x = self.proj(x) # 768 -> d_model
         else:
             raise NotImplementedError
@@ -352,7 +386,42 @@ class Model(nn.Module):
                     self.enc_embedding = nn.ModuleList(self.enc_embedding)
                     self.dec_embedding = None if self.gym_encoder_only else nn.ModuleList(self.dec_embedding)
         else: # channel-dependent
-            if self.gym_input_embed == 'inverted-encoding': # CD + inverted-encoding
+            if self.gym_input_embed == 'series-patching': # CD + series-patching
+                stride, padding, self.patch_num, patch_len = calculate_patch_num(self.configs.seq_len)
+                if self.gym_network_architecture in ['GRU','MLP']:
+                    self.enc_embedding = PatchEmbedding_wo_pos_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
+                                                               padding=padding, dropout=self.configs.dropout)
+                    self.dec_embedding = None if self.gym_encoder_only else PatchEmbedding_wo_pos_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len,
+                                                                                                  stride=stride, padding=padding, dropout=self.configs.dropout)
+                else:
+                    self.enc_embedding = PatchEmbedding_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
+                                                        padding=padding, dropout=self.configs.dropout)
+                    self.dec_embedding = None if self.gym_encoder_only else PatchEmbedding_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, 
+                                                                                           stride=stride, padding=padding, dropout=self.configs.dropout)
+                
+                if self.series_sampling: # CI + series-patching + series-sampling
+                    self.enc_embedding = torch.nn.ModuleList()
+                    self.dec_embedding = None if self.gym_encoder_only else torch.nn.ModuleList()
+                    for i in range(self.configs.down_sampling_layers + 1):
+                        seq_len_ = self.configs.seq_len // (self.configs.down_sampling_window ** i)
+                        stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
+                        if self.gym_network_architecture in ['GRU','MLP']:
+                            enc_embedding_ = PatchEmbedding_wo_pos_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
+                                                                   padding=padding, dropout=self.configs.dropout)
+                            dec_embedding_ = None if self.gym_encoder_only else PatchEmbedding_wo_pos_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len,
+                                                                                                      stride=stride, padding=padding, dropout=self.configs.dropout)
+                        else:
+                            enc_embedding_ = PatchEmbedding_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
+                                                            padding=padding, dropout=self.configs.dropout)
+                            dec_embedding_ = None if self.gym_encoder_only else PatchEmbedding_CD(enc_in=self.configs.enc_in, d_model=self.configs.d_model, patch_len=patch_len, stride=stride,
+                                                            padding=padding, dropout=self.configs.dropout)
+                            
+                        self.enc_embedding.append(enc_embedding_)
+                        if not self.gym_encoder_only: self.dec_embedding.append(dec_embedding_)
+                    
+                    self.enc_embedding = nn.ModuleList(self.enc_embedding)
+                    self.dec_embedding = None if self.gym_encoder_only else nn.ModuleList(self.dec_embedding)
+            elif self.gym_input_embed == 'inverted-encoding': # CD + inverted-encoding
                 self.enc_embedding = DataEmbedding_inverted(self.configs.seq_len, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                 self.dec_embedding = None if self.gym_encoder_only else DataEmbedding_inverted(
                     self.configs.seq_len, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
@@ -370,7 +439,6 @@ class Model(nn.Module):
                 self.delta2 = nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, self.pred_len))
                 
                 if self.series_sampling: # CI + ortho-encoding + series_sampling
-                    # TODO: 暂时还不支持ortho-encoding+series sampling： 因为不同seqlen长度的qmat不一样。
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
                     self.delta1 = nn.ParameterList([nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, _seqlen)) for _seqlen in self.sampling_seqlen])
                     self.ortho_input_encoder = nn.ModuleList([nn.Linear(_seqlen*self.configs.d_model, self.configs.d_model) for _seqlen in self.sampling_seqlen])
@@ -378,7 +446,6 @@ class Model(nn.Module):
                         Q_mat = torch.from_numpy(np.load(self.q_mat_dir[i])).to(torch.float32).transpose(-1, -2)
                         assert Q_mat.shape[0] == _seqlen
                         self.register_buffer(f'Q_mat_{i}', Q_mat)
-                        
             elif self.gym_input_embed == 'series-encoding': # CD + series-encoding
                 if self.gym_network_architecture in ['GRU','MLP']:
                     self.enc_embedding = DataEmbedding_wo_pos(self.configs.enc_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
@@ -851,6 +918,60 @@ class Model(nn.Module):
                         ])
                     else:
                         raise NotImplementedError
+            elif self.gym_input_embed == 'series-patching': # CD + series-patching
+                stride, padding, patch_num, patch_len = calculate_patch_num(self.configs.seq_len)
+                # B, patch_num, d_model -> B, patch_num, C*patch_len -> B, NP, C, PL -> B, C, NP, PL -> B, C, S -> B,C,predlen
+                if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+                    self.head = PatchingHead_CD(d_model=self.configs.d_model, n_vars=self.configs.enc_in, pred_len=self.configs.pred_len, 
+                                                patch_num=patch_num, patch_len=patch_len, head_dropout=self.configs.dropout) # (B, patchnum, dmodel) -> (B, C, pred_len)
+                elif self.task_name == 'imputation' or self.task_name == 'anomaly_detection':
+                    self.head = PatchingHead_CD(d_model=self.configs.d_model, n_vars=self.configs.enc_in, pred_len=self.configs.seq_len, 
+                                                patch_num=patch_num, patch_len=patch_len, head_dropout=self.configs.dropout) # (B, patchnum, dmodel) -> (B, C, pred_len)
+                elif self.task_name == 'classification':
+                    # B, np, dmodel -> B,num_classes
+                    self.head = nn.Sequential(
+                        nn.Flatten(start_dim=1),
+                        nn.Dropout(self.configs.dropout),
+                        nn.Linear(self.configs.d_model * patch_num, self.configs.num_classes)
+                    ) # (B, C, patch_num, d_model) -> (B, num_classes)
+                elif self.task_name == 'finance_regressing':
+                    self.head = nn.Sequential(
+                        nn.Flatten(start_dim=1),
+                        nn.Dropout(self.configs.dropout),
+                        nn.Linear(self.configs.d_model * patch_num, 1)
+                    ) # (B, C, patch_num, d_model) -> (B, 1)
+                else:
+                    raise NotImplementedError
+                # CD + series-patching + series-sampling
+                if self.gym_series_sampling:
+                    self.head = torch.nn.ModuleList()
+                    for i in range(self.configs.down_sampling_layers + 1):
+                        seq_len_ = self.configs.seq_len // (self.configs.down_sampling_window ** i)
+                        stride, padding, patch_num, patch_len = calculate_patch_num(seq_len_)
+                        if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+                            _head = PatchingHead_CD(d_model=self.configs.d_model, n_vars=self.configs.enc_in, pred_len=self.configs.pred_len, 
+                                                        patch_num=patch_num, patch_len=patch_len, head_dropout=self.configs.dropout) # (B, patchnum, dmodel) -> (B, C, pred_len)
+                            # _head = FlattenHead(self.configs.enc_in, self.configs.d_model * patch_num, self.configs.pred_len,
+                            #                         head_dropout=self.configs.dropout) # (B, C, patch_num, d_model) -> (B, C, pred_len)
+                        elif self.task_name == 'imputation' or self.task_name == 'anomaly_detection':
+                            _head = PatchingHead_CD(d_model=self.configs.d_model, n_vars=self.configs.enc_in, pred_len=self.configs.seq_len, 
+                                                        patch_num=patch_num, patch_len=patch_len, head_dropout=self.configs.dropout) # (B, patchnum, dmodel) -> (B, C, seq_len)
+                            # _head = FlattenHead(self.configs.enc_in, self.configs.d_model * patch_num, self.configs.seq_len,
+                            #                         head_dropout=self.configs.dropout) # (B, C, patch_num, d_model) -> (B, C, seq_len)
+                        elif self.task_name == 'classification':
+                            _head = nn.Sequential(
+                                nn.Flatten(start_dim=1),
+                                nn.Dropout(self.configs.dropout),
+                                nn.Linear(self.configs.d_model * patch_num, self.configs.num_classes)
+                            ) # (B, C, patch_num, d_model) -> (B, num_classes)
+                        elif self.task_name == 'finance_regressing':
+                            _head = nn.Sequential(
+                                nn.Flatten(start_dim=1),
+                                nn.Dropout(self.configs.dropout),
+                                nn.Linear(self.configs.d_model, 1)
+                            ) # (B, C, d_model) -> (B, 1)
+                        self.head.append(_head)
+                    self.head = nn.ModuleList(self.head)
             else:
                 raise NotImplementedError
     
@@ -1241,17 +1362,18 @@ class Model(nn.Module):
                 dec_out = [_[:, -self.pred_len:, :] for _ in dec_out]
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
                 if self.gym_channel_independent: dec_out = dec_out.reshape(self.B, self.C, self.pred_len).permute(0, 2, 1).contiguous()
-            elif self.gym_input_embed == 'series-patching':
+            elif self.gym_input_embed == 'series-patching' and self.gym_channel_independent:
                 enc_out = [torch.reshape(_, (-1, self.n_vars, _.shape[-2], _.shape[-1])) for _ in enc_out]
                 enc_out = [_.permute(0, 1, 3, 2) for _ in enc_out]
                 dec_out = [self.head[i](_) for i, _ in enumerate(enc_out)]
                 dec_out = [_.permute(0, 2, 1) for _ in dec_out]
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+            elif self.gym_input_embed == 'series-patching' and not self.gym_channel_independent:
+                # [B, patchnum, dmodel]
+                dec_out = [self.head[i](_) for i,_ in enumerate(enc_out)]
+                dec_out = [_.permute(0, 2, 1) for _ in dec_out]
+                dec_out = torch.stack(dec_out, dim=-1).sum(-1)
             elif self.gym_input_embed == 'ortho-encoding':
-                # 暂时还不支持这个组合
-                # B,C,D -> B,C,predlen*D
-                # print(len(enc_out))
-                # print(self.decoder_projection)
                 dec_out = [self.decoder_projection(_) for i,_ in enumerate(enc_out)]
                 # reshape dot product
                 dec_out = [_.reshape(self.B, self.C, self.configs.d_model, self.pred_len) for _ in dec_out]
@@ -1286,10 +1408,14 @@ class Model(nn.Module):
                 dec_out = [_[:, -1, :] for _ in dec_out] #B,C
                 dec_out = [self.head[i](_) for i, _ in enumerate(dec_out)] # dec_out:B,
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
-            elif self.gym_input_embed == 'series-patching':
+            elif self.gym_input_embed == 'series-patching' and self.gym_channel_independent:
                 enc_out = [_[:, -1, :] for _ in enc_out] # B*C, patchnum, dmodel -> B*C, dmodel
                 enc_out = [torch.reshape(_, (-1, self.n_vars, _.shape[-1])) for _ in enc_out] # B, C, dmodel
                 dec_out = [self.head[i](_) for i, _ in enumerate(enc_out)] # B, 1
+                dec_out = torch.stack(dec_out, dim=-1).sum(-1)
+            elif self.gym_input_embed == 'series-patching' and not self.gym_channel_independent:
+                enc_out = [_[:, -1, :] for _ in enc_out] # B, patchnum, dmodel -> B, dmodel
+                dec_out = [self.head[i](_) for i,_ in enumerate(enc_out)] # B, 1
                 dec_out = torch.stack(dec_out, dim=-1).sum(-1)
             elif self.gym_input_embed == 'ortho-encoding':
                 # B,C,D -> B,C*D -> B
@@ -1314,11 +1440,15 @@ class Model(nn.Module):
                 dec_out = self.head(dec_out.permute(0, 2, 1)).permute(0, 2, 1) # BxSxD -> BxDxS -> BxDxpred_len -> Bxpred_lenxD
                 dec_out = dec_out[:, -self.pred_len:, :]
                 if self.gym_channel_independent: dec_out = dec_out.reshape(self.B, self.C, self.pred_len).permute(0, 2, 1).contiguous()
-            elif self.gym_input_embed == 'series-patching':
+            elif self.gym_input_embed == 'series-patching' and self.gym_channel_independent:
                 # z: [bs x nvars x patch_num x d_model]
                 enc_out = torch.reshape(enc_out, (-1, self.n_vars, enc_out.shape[-2], enc_out.shape[-1]))
                 # z: [bs x nvars x d_model x patch_num]
                 enc_out = enc_out.permute(0, 1, 3, 2)
+                dec_out = self.head(enc_out)  # B x D x pred_len
+                dec_out = dec_out.permute(0, 2, 1) # B x pred_len x D
+            elif self.gym_input_embed == 'series-patching' and not self.gym_channel_independent:
+                # z:[bs, patch_num, d_model]
                 dec_out = self.head(enc_out)  # B x D x pred_len
                 dec_out = dec_out.permute(0, 2, 1) # B x pred_len x D
             elif self.gym_input_embed == 'ortho-encoding':
@@ -1340,7 +1470,7 @@ class Model(nn.Module):
             # decoder input embedding
             if self.gym_input_embed == 'series-encoding':
                 dec_out = self.dec_embedding(x_dec, x_mark_dec)
-            elif self.gym_input_embed == 'series-patching':
+            elif self.gym_input_embed == 'series-patching' and self.gym_channel_independent:
                 # do patching and embedding
                 x_dec = x_dec.permute(0, 2, 1) # BxSxD -> BxDxS
                 # u: [(bs * nvars) x patch_num x d_model]
@@ -1387,11 +1517,15 @@ class Model(nn.Module):
                 dec_out = dec_out[:, -1, :] # B,C
                 # projection to predicting length
                 dec_out = self.head(dec_out) # B,
-            elif self.gym_input_embed == 'series-patching':
+            elif self.gym_input_embed == 'series-patching' and self.gym_channel_independent:
                 enc_out = enc_out[:, -1, :] # bs*nvars, dmodel
                 # z: [bs x nvars x d_model]
                 enc_out = torch.reshape(enc_out, (-1, self.n_vars, enc_out.shape[-1]))
                 # z: [bs x nvars x d_model]
+                dec_out = self.head(enc_out)  # B x 1
+            elif self.gym_input_embed == 'series-patching' and not self.gym_channel_independent:
+                # z: b,np,dm
+                enc_out = enc_out[:, -1, :] # bs, dmodel
                 dec_out = self.head(enc_out)  # B x 1
             elif self.gym_input_embed == 'ortho-encoding':
                 # enc_out: B,C,dmodel

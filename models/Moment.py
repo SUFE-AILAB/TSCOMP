@@ -50,8 +50,12 @@ class Model(nn.Module):
     #     return x
 
     def forward(self, x):
+        cache_position = torch.arange(x.shape[1], device=x.device)
         for layer in self.block:
-            x = layer(x)[0]  # 只取hidden_states
+            try:
+                x = layer(x)[0]  # 只取hidden_states
+            except:
+                x = layer(x, cache_position=cache_position)[0]  # 只取hidden_states 
         x = self.final_layer_norm(x)
         x = self.dropout(x)
         return x, None

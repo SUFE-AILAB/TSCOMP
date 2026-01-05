@@ -196,10 +196,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
                 train_loss = np.average(train_loss)
                 vali_loss = self.vali(vali_data, vali_loader, criterion)
-                test_loss = self.vali(test_data, test_loader, criterion)
+                if getattr(self.args, 'use_rag', False) or self.args.model == 'RAFT':
+                    print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+                        epoch + 1, train_steps, train_loss, vali_loss))
+                else:
+                    test_loss = self.vali(test_data, test_loader, criterion)
 
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+                    print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                        epoch + 1, train_steps, train_loss, vali_loss, test_loss))
                 early_stopping(vali_loss, self.model, best_model_path)
                 if early_stopping.early_stop:
                     print("Early stopping")

@@ -8,8 +8,6 @@ from tqdm import tqdm
 
 from torch.utils.data import Dataset, DataLoader
 
-from layers.StandardNorm import Normalize, DishTS
-
 class TSGymRetrievalFusionBlock(nn.Module):
     def __init__(self, period_num, pred_len, channels):
         """
@@ -247,6 +245,126 @@ class TSGymRetrievalTool():
         
         return pred_from_retrieval
     
+    def retrieve_cpu(self, x, index, train=True):
+        # index = index.to(x.device) # index device handling moved below
+        
+        bsz, seq_len, channels = x.shape
+        assert(seq_len == self.seq_len, channels == self.channels)
+        
+        x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
+
+        if self.channel_independence:
+            # === 通道独立模式 (CI) ===
+            # 逻辑: 把 C 提到前面，和 G 融合。这意味着我们有 G*C 个独立的检索任务在并行运行
+            
+            # Query: (G, B, S, C) -> (G, C, B, S) -> (G*C, B, S)
+            query_feat = x_mg.permute(0, 3, 1, 2).reshape(-1, bsz, seq_len)
+            
+            # Database: (G, T, S, C) -> (G, C, T, S) -> (G*C, T, S)
+            db_feat = self.train_data_all_mg.permute(0, 3, 1, 2).reshape(-1, self.n_train, seq_len)
+            
+            # Target (Label): (G, T, P, C) -> (G, C, T, P) -> (G*C, T, P)
+            y_data_flat = self.y_data_all_mg.permute(0, 3, 1, 2).reshape(-1, self.n_train, self.pred_len)
+            num_parallel = self.n_period * self.channels
+        else:
+            # === 通道依赖模式 (Joint) ===
+            # 逻辑: 把 C 融合进特征维 S 里
+            query_feat = x_mg.flatten(start_dim=2) # G, B, S * C
+            db_feat = self.train_data_all_mg.flatten(start_dim=2) # G, T, S * C
+            y_data_flat = self.y_data_all_mg.flatten(start_dim=2) # (G, T, P*C)
+            num_parallel = self.n_period
+
+        # Normalize Query (GPU)
+        query_feat = query_feat - torch.mean(query_feat, dim=2, keepdim=True)
+        query_feat = F.normalize(query_feat, dim=2)
+
+        # Prepare Masking Indices (GPU)
+        if train:
+            sliding_index = torch.arange(2 * (self.seq_len + self.pred_len) - 1, device=x.device)
+            sliding_index = sliding_index.unsqueeze(0).repeat(bsz, 1)
+            index_dev = index.to(x.device)
+            sliding_index = sliding_index + (index_dev - self.seq_len - self.pred_len + 1).unsqueeze(1)
+
+        # Block-wise TopK
+        chunk_size = 512 
+        train_len = self.n_train
+        iters = math.ceil(train_len / chunk_size)
+        
+        topk_values = None
+        topk_indices = None
+        
+        for i in range(iters):
+            start_idx = i * chunk_size
+            end_idx = min((i + 1) * chunk_size, train_len)
+            current_chunk_len = end_idx - start_idx
+            
+            # Load DB Chunk (CPU -> GPU)
+            db_chunk = db_feat[:, start_idx:end_idx].to(x.device)
+            
+            # Normalize DB Chunk
+            db_chunk = db_chunk - torch.mean(db_chunk, dim=2, keepdim=True)
+            db_chunk = F.normalize(db_chunk, dim=2)
+            
+            # Compute Sim: [Num_Parallel, Batch, Chunk_Len]
+            sim_chunk = torch.bmm(query_feat, db_chunk.transpose(1, 2))
+            
+            # Apply Mask
+            if train:
+                curr_sliding = sliding_index - start_idx
+                valid = (curr_sliding >= 0) & (curr_sliding < current_chunk_len)
+                if valid.any():
+                    b_idx = torch.arange(bsz, device=x.device).unsqueeze(1).expand_as(curr_sliding)
+                    valid_b = b_idx[valid]
+                    valid_c = curr_sliding[valid]
+                    
+                    mask_chunk = torch.zeros(bsz, current_chunk_len, device=x.device, dtype=torch.bool)
+                    mask_chunk[valid_b, valid_c] = True
+                    mask_chunk = mask_chunk.unsqueeze(0).expand(num_parallel, -1, -1)
+                    
+                    sim_chunk = sim_chunk.masked_fill(mask_chunk, float('-inf'))
+
+            # TopK on Chunk
+            k = min(self.topm, current_chunk_len)
+            chunk_val, chunk_idx = torch.topk(sim_chunk, k, dim=2)
+            chunk_idx += start_idx
+            
+            # Merge
+            if topk_values is None:
+                topk_values = chunk_val
+                topk_indices = chunk_idx
+            else:
+                combined_val = torch.cat([topk_values, chunk_val], dim=2)
+                combined_idx = torch.cat([topk_indices, chunk_idx], dim=2)
+                
+                topk_values, meta_idx = torch.topk(combined_val, self.topm, dim=2)
+                topk_indices = torch.gather(combined_idx, 2, meta_idx)
+
+        # Softmax
+        ranking_prob = F.softmax(topk_values / self.temperature, dim=2)
+        
+        # Gather Y (CPU -> GPU)
+        gathered_y = []
+        topk_indices_cpu = topk_indices.cpu()
+        
+        for i in range(num_parallel):
+            idxs = topk_indices_cpu[i]
+            val = y_data_flat[i][idxs]
+            gathered_y.append(val)
+            
+        gathered_y = torch.stack(gathered_y, dim=0).to(x.device)
+        
+        pred_from_retrieval = torch.matmul(ranking_prob.unsqueeze(2), gathered_y).squeeze(2)
+
+        if self.channel_independence:
+            # CI Output: (G*C, B, P) -> 还原为 (G, C, B, P) -> 转置为 (G, B, P, C)
+            pred_from_retrieval = pred_from_retrieval.reshape(self.n_period, self.channels, bsz, -1)
+            pred_from_retrieval = pred_from_retrieval.permute(0, 2, 3, 1) # G, B, P, C
+        else:
+            # Joint Output: (G, B, P*C) -> 还原为 (G, B, P, C)
+            pred_from_retrieval = pred_from_retrieval.reshape(self.n_period, bsz, -1, self.channels)
+
+        return pred_from_retrieval
+    
     def retrieve_all(self, data, train=False):
         assert(self.train_data_all_mg != None)
         
@@ -262,8 +380,11 @@ class TSGymRetrievalTool():
         
         retrievals = []
         with torch.no_grad():
-            for batch_x, batch_y, batch_x_mark, batch_y_mark, index in tqdm(rt_loader):
-                pred_from_retrieval = self.retrieve(batch_x.float().to(data.device), index, train=train)
+            for batch_x, batch_y, batch_x_mark, batch_y_mark, index in tqdm(rt_loader, desc="Retrieval Progress"):
+                if 'traffic' in data.root_path or 'electricity' in data.root_path:
+                    pred_from_retrieval = self.retrieve_cpu(batch_x.float().to(data.device), index, train=train)
+                else:
+                    pred_from_retrieval = self.retrieve(batch_x.float().to(data.device), index, train=train)
                 pred_from_retrieval = pred_from_retrieval.cpu()
                 retrievals.append(pred_from_retrieval)
                 
@@ -419,6 +540,102 @@ class RetrievalTool():
         
         return pred_from_retrieval
     
+    def retrieve_cpu(self, x, index, train=True):
+        bsz, seq_len, channels = x.shape
+        assert(seq_len == self.seq_len, channels == self.channels)
+        
+        x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
+
+        # === 通道依赖模式 (Joint) ===
+        query_feat = x_mg.flatten(start_dim=2)
+        db_feat = self.train_data_all_mg.flatten(start_dim=2)
+        y_data_flat = self.y_data_all_mg.flatten(start_dim=2)
+        num_parallel = self.n_period
+
+        # Normalize Query (GPU)
+        query_feat = query_feat - torch.mean(query_feat, dim=2, keepdim=True)
+        query_feat = F.normalize(query_feat, dim=2)
+
+        # Prepare Masking Indices (GPU)
+        if train:
+            sliding_index = torch.arange(2 * (self.seq_len + self.pred_len) - 1, device=x.device)
+            sliding_index = sliding_index.unsqueeze(0).repeat(bsz, 1)
+            index_dev = index.to(x.device)
+            sliding_index = sliding_index + (index_dev - self.seq_len - self.pred_len + 1).unsqueeze(1)
+
+        # Block-wise TopK
+        chunk_size = 512 
+        train_len = self.n_train
+        iters = math.ceil(train_len / chunk_size)
+        
+        topk_values = None
+        topk_indices = None
+        
+        for i in range(iters):
+            start_idx = i * chunk_size
+            end_idx = min((i + 1) * chunk_size, train_len)
+            current_chunk_len = end_idx - start_idx
+            
+            # Load DB Chunk (CPU -> GPU)
+            db_chunk = db_feat[:, start_idx:end_idx].to(x.device)
+            
+            # Normalize DB Chunk
+            db_chunk = db_chunk - torch.mean(db_chunk, dim=2, keepdim=True)
+            db_chunk = F.normalize(db_chunk, dim=2)
+            
+            # Compute Sim: [Num_Parallel, Batch, Chunk_Len]
+            sim_chunk = torch.bmm(query_feat, db_chunk.transpose(1, 2))
+            
+            # Apply Mask
+            if train:
+                curr_sliding = sliding_index - start_idx
+                valid = (curr_sliding >= 0) & (curr_sliding < current_chunk_len)
+                if valid.any():
+                    b_idx = torch.arange(bsz, device=x.device).unsqueeze(1).expand_as(curr_sliding)
+                    valid_b = b_idx[valid]
+                    valid_c = curr_sliding[valid]
+                    
+                    mask_chunk = torch.zeros(bsz, current_chunk_len, device=x.device, dtype=torch.bool)
+                    mask_chunk[valid_b, valid_c] = True
+                    mask_chunk = mask_chunk.unsqueeze(0).expand(num_parallel, -1, -1)
+                    
+                    sim_chunk = sim_chunk.masked_fill(mask_chunk, float('-inf'))
+
+            # TopK on Chunk
+            k = min(self.topm, current_chunk_len)
+            chunk_val, chunk_idx = torch.topk(sim_chunk, k, dim=2)
+            chunk_idx += start_idx
+            
+            # Merge
+            if topk_values is None:
+                topk_values = chunk_val
+                topk_indices = chunk_idx
+            else:
+                combined_val = torch.cat([topk_values, chunk_val], dim=2)
+                combined_idx = torch.cat([topk_indices, chunk_idx], dim=2)
+                
+                topk_values, meta_idx = torch.topk(combined_val, self.topm, dim=2)
+                topk_indices = torch.gather(combined_idx, 2, meta_idx)
+
+        # Softmax
+        ranking_prob = F.softmax(topk_values / self.temperature, dim=2)
+        
+        # Gather Y (CPU -> GPU)
+        gathered_y = []
+        topk_indices_cpu = topk_indices.cpu()
+        
+        for i in range(num_parallel):
+            idxs = topk_indices_cpu[i]
+            val = y_data_flat[i][idxs]
+            gathered_y.append(val)
+            
+        gathered_y = torch.stack(gathered_y, dim=0).to(x.device)
+        
+        pred_from_retrieval = torch.matmul(ranking_prob.unsqueeze(2), gathered_y).squeeze(2)
+        pred_from_retrieval = pred_from_retrieval.reshape(self.n_period, bsz, -1, self.channels)
+
+        return pred_from_retrieval
+    
     def retrieve_all(self, data, train=False):
         assert(self.train_data_all_mg != None)
         
@@ -435,7 +652,10 @@ class RetrievalTool():
         retrievals = []
         with torch.no_grad():
             for batch_x, batch_y, batch_x_mark, batch_y_mark, index in tqdm(rt_loader):
-                pred_from_retrieval = self.retrieve(batch_x.float().to(data.device), index, train=train)
+                if 'traffic' in data.root_path or 'electricity' in data.root_path:
+                    pred_from_retrieval = self.retrieve_cpu(batch_x.float().to(data.device), index, train=train)
+                else:
+                    pred_from_retrieval = self.retrieve(batch_x.float().to(data.device), index, train=train)
                 pred_from_retrieval = pred_from_retrieval.cpu()
                 retrievals.append(pred_from_retrieval)
                 

@@ -53,10 +53,17 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
             self.args.use_rag = True
-            train_data, train_loader = self._get_data(flag='train')
-            vali_data, vali_loader = self._get_data(flag='val')
-            test_data, test_loader = self._get_data(flag='test')
+            train_data, _ = self._get_data(flag='train')
+            vali_data, _ = self._get_data(flag='val')
+            test_data, _ = self._get_data(flag='test')
             
+            if 'traffic' in self.args.data_path or 'electricity' in self.args.data_path:
+                # Move data to CPU to save GPU memory during retrieval preparation
+                for data in [train_data, vali_data, test_data]:
+                    if hasattr(data, 'data_x') and data.data_x is not None: data.data_x = data.data_x.cpu()
+                    if hasattr(data, 'data_y') and data.data_y is not None: data.data_y = data.data_y.cpu()
+                    if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
+
             model.prepare_dataset(train_data, vali_data, test_data)
         return model
 

@@ -150,8 +150,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         with torch.cuda.amp.autocast():
                             if self.args.model == 'RAFT':
                                 outputs = self.model(batch_x, index, mode='train')
-                            else:
+                            elif getattr(self.args, 'use_rag', False):
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                             f_dim = -1 if self.args.features == 'MS' else 0
                             outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -161,8 +163,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     else:
                         if self.args.model == 'RAFT':
                             outputs = self.model(batch_x, index, mode='train')
-                        else:
+                        elif getattr(self.args, 'use_rag', False):
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -245,13 +249,17 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     with torch.cuda.amp.autocast():
                         if self.args.model == 'RAFT':
                             outputs = self.model(batch_x, index, mode='valid')
-                        else:
+                        elif getattr(self.args, 'use_rag', False):
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     if self.args.model == 'RAFT':
                         outputs = self.model(batch_x, index, mode='valid')
-                    else:
+                    elif getattr(self.args, 'use_rag', False):
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                    else:
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
@@ -315,13 +323,17 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         with torch.cuda.amp.autocast():
                             if self.args.model == 'RAFT':
                                 outputs = self.model(batch_x, index, mode='test')
-                            else:
+                            elif getattr(self.args, 'use_rag', False):
                                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                     else:
                         if self.args.model == 'RAFT':
                             outputs = self.model(batch_x, index, mode='test')
-                        else:
+                        elif getattr(self.args, 'use_rag', False):
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, :]

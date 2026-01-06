@@ -2,6 +2,7 @@ import pandas as pd
 import subprocess
 from multiprocessing import Pool
 import argparse
+import os
 
 def run_task(task_command, task_id):
     try:
@@ -11,7 +12,7 @@ def run_task(task_command, task_id):
     except subprocess.CalledProcessError as e:
         print(f"\nError executing task {task_id}: \n{e}", flush=True)
 
-def create_task_list(param_devices, env):
+def create_task_list(param_devices, env, dataset):
     # https://decisionintelligence.github.io/OpenTS/datasets/#Multivariate-time-series
     # Prepare the cleaned data from the OCR result
     data=[
@@ -19,63 +20,104 @@ def create_task_list(param_devices, env):
         # ["pems-bay", "Traffic", "5 mins", 52116, 325, "7:1:2"],
         # ["pems04", "Traffic", "5 mins", 16992, 307, "6:2:2"],
         # ["pems08", "Traffic", "5 mins", 17856, 170, "6:2:2"],
-        # ["ETTh1", "Electricity", "1 hour", 14400, 7, "7:1:2","ETTh1"],
-        # ["ETTh2", "Electricity", "1 hour", 14400, 7, "7:1:2","ETTh2"],
-        # ["weather", "Environment", "10 mins", 52696, 21, "7:1:2"],
-        # ["ETTm2", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm2"],
-        # ["electricity", "Electricity", "1 hour", 26304, 321, "6:2:2","ECL"],
+        ["ETTh1", "Electricity", "1 hour", 14400, 7, "7:1:2","ETTh1"],
+        ["ETTh2", "Electricity", "1 hour", 14400, 7, "7:1:2","ETTh2"],
+        ["weather", "Environment", "10 mins", 52696, 21, "7:1:2"],
+        ["ETTm2", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm2"],
+        ["electricity", "Electricity", "1 hour", 26304, 321, "6:2:2","ECL"],
         # ["solar", "Energy", "10 mins", 52560, 137, "6:2:2"],
         # ["wind", "Energy", "15 mins", 48673, 7, "7:1:2"],
-        # ["ETTm1", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm1"],
+        ["ETTm1", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm1"],
         # ["aqshunyi", "Environment", "1 hour", 35064, 11, "6:2:2"],
         # ["aqwan", "Environment", "1 hour", 35064, 11, "6:2:2", "aqwan"],
         # ["zafnoo", "Nature", "30 mins", 19225, 1, "7:1:2", "zafnoo"],
-        ["czelan", "Nature", "30 mins", 19934, 11, "7:1:2", "czelan"],
-        # ["fred-md", "Economic", "1 month", 728, 107, "7:1:2"]
-        # ["exchange_rate", "Economic", "1 day", 7588, 8, "7:1:2","Exchange"],
-        # ["nasdaq", "Stock", "1 day", 1244, 5, "7:1:2"],
-        # ["nyse", "Stock", "1 day", 1243, 5, "7:1:2"],
+        # ["czelan", "Nature", "30 mins", 19934, 11, "7:1:2", "czelan"],
+        # ["fred-md", "Economic", "1 month", 728, 107, "7:1:2"],
+        ["exchange_rate", "Economic", "1 day", 7588, 8, "7:1:2","Exchange"],
+        ["nasdaq", "Stock", "1 day", 1244, 5, "7:1:2"],
+        ["nyse", "Stock", "1 day", 1243, 5, "7:1:2"],
         # ["nn5", "Banking", "1 day", 791, 111, "7:1:2"],
-        # ["ili", "Health", "1 week", 966, 7, "7:1:2"],
+        ["ili", "Health", "1 week", 966, 7, "7:1:2"],
         # ["covid-19", "Health", "1 day", 1392, 948, "7:1:2"],
         # ["wike2000", "Web", "1 day", 792, 2000, "7:1:2"],
-
-        # ["M4-Yearly", "Demographic", "1 year", 6, 1, "7:1:2", "m4_Yearly"],
-        # ["M4-Quarterly", "Finance", "1 quarter", 8, 1, "7:1:2", "m4_Quarterly"],
-        # ["M4-Monthly", "Industry", "1 month", 18, 1, "7:1:2", "m4_Monthly"],
-        # ["M4-Weekly", "Macro", "1 week", 13, 1, "7:1:2", "m4_Weekly"],
-        # ["M4-Daily", "Micro", "1 day", 14, 1, "7:1:2", "m4_Daily"],
-        # ["M4-Hourly", "Other", "1 hour", 48, 1, "7:1:2", "m4_Hourly"]
-        # ["electricity", "Electricity", "1 hour", 26304, 321, "6:2:2","ECL"],
-        # ["traffic", "Traffic", "1 hour", 17544, 862, "7:1:2","traffic"],
-        # ["ETTm2", "Electricity", "15 mins", 57600, 7, "7:1:2","ETTm2"],
+        ["M4-Yearly", "Demographic", "1 year", 6, 1, "7:1:2", "m4_Yearly"],
+        ["M4-Quarterly", "Finance", "1 quarter", 8, 1, "7:1:2", "m4_Quarterly"],
+        ["M4-Monthly", "Industry", "1 month", 18, 1, "7:1:2", "m4_Monthly"],
+        ["M4-Weekly", "Macro", "1 week", 13, 1, "7:1:2", "m4_Weekly"],
+        ["M4-Daily", "Micro", "1 day", 14, 1, "7:1:2", "m4_Daily"],
+        ["M4-Hourly", "Other", "1 hour", 48, 1, "7:1:2", "m4_Hourly"],
+        ["traffic", "Traffic", "1 hour", 17544, 862, "7:1:2","traffic"],
     ]
     df = pd.DataFrame(data, columns=["Dataset", "Domain", "Frequency", "Lengths", "Dim", "Split","model_id"])
     df['model_id'] = df['model_id'].fillna(df['Dataset'])
 
-    # # 读取 Excel 文件
-    # trained_model_xlsx = pd.read_excel('./meta/results_vis-ls/component_balance_True-add_new_dataset_True-add_transformer_True.xlsx')  # 如果有多个 sheet，可以加 sheet_name 参数
-    # # 初始化字典
-    # trained_model = {}
-    # # 遍历所有列（每两列一组：model名 + 对应值列）
-    # for i in range(0, len(trained_model_xlsx.columns), 2):
-    #     model_col = trained_model_xlsx.columns[i]
-    #     dataset_col = trained_model_xlsx.columns[i+1]
+    # df = df[df['Dataset'] == dataset]
 
-    #     # 获取当前列中不为空的模型名称
-    #     models = trained_model_xlsx[model_col].dropna().tolist()
-        
-    #     # 加入字典
-    #     trained_model[dataset_col] = models
+    # 获取已训练的模型列表
+    trained_model = {}
+    # 检查 long_term_forecast 目录及其子目录
+    long_term_path = './scripts/long_term_forecast'
+    if os.path.exists(long_term_path):
+        for script_dir in os.listdir(long_term_path):
+            script_dir_path = os.path.join(long_term_path, script_dir)
+            if os.path.isdir(script_dir_path) and script_dir.endswith('_script'):
+                # 从目录名提取数据集名称 (e.g., ECL_script -> ECL)
+                dataset_name = script_dir.replace('_script', '')
+                
+                # 遍历该目录下的 .sh 文件
+                for file_name in os.listdir(script_dir_path):
+                    if file_name.endswith('.sh'):
+                        model_name = file_name.replace('.sh', '').replace('_ETTh1', '').replace('_ETTh2', '').replace('_ETTm1', '').replace('_ETTm2', '')
+                        
+                        if dataset_name not in trained_model:
+                            trained_model[dataset_name] = []
+                        if model_name not in trained_model[dataset_name]:
+                            trained_model[dataset_name].append(model_name)
+
+    # 检查 short_term_forecast 目录 (M4数据集)
+    short_term_path = './scripts/short_term_forecast'
+    if os.path.exists(short_term_path):
+        for file in os.listdir(short_term_path):
+            if file.endswith('.sh') and '_M4' in file:
+                 model_name = file.replace('_M4.sh', '')
+                 # M4 数据集的各个子集 (Yearly, Quarterly 等) 通常都在这些脚本中覆盖
+                 # 所以我们将它们标记为已训练，对应 run_sota 中的 'm4_Yearly', 'm4_Quarterly' 等
+                 m4_datasets = ["m4_Yearly", "m4_Quarterly", "m4_Monthly", "m4_Weekly", "m4_Daily", "m4_Hourly"]
+                 for m4_ds in m4_datasets:
+                     if m4_ds not in trained_model:
+                         trained_model[m4_ds] = []
+                     if model_name not in trained_model[m4_ds]:
+                         trained_model[m4_ds].append(model_name)
+    
+    # 修正一些数据集名称映射，使其与 run_sota 下面的 data 列表中的 model_id 一致
+    # run_sota 中的 model_id: 'ECL', 'ETTh1', 'Traffic', 'Weather', 'Exchange', 'ILI' 等
+    # 手动规范化 key，尽量匹配下面的 data_model_id
+    key_mapping = {
+        'Traffic': 'traffic',
+        'Weather': 'weather',
+        'ILI': 'ili',
+        'Solar': 'solar',
+        'NASDAQ':'nasdaq',
+        'NYSE':'nyse',
+    }
+    
+    # 更新 key
+    keys_to_update = list(trained_model.keys())
+    for k in keys_to_update:
+        if k in key_mapping:
+            new_key = key_mapping[k]
+            trained_model[new_key] = trained_model.pop(k)
 
     task_list = []
-    if env == 'mqenv':
-        # model_list =  ['Autoformer', 'PatchTST', 'DLinear', 'LightTS', 'Pyraformer', 
-        #             'MICN', 'Koopa', 'FEDformer', 'Reformer', 'SegRNN', 'Crossformer',
-        #                 'TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer','TSMixer',
-        #                 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 'SCINet',
-        #                 'TemporalFusionTransformer', 'PAttn','TiDE' , 'TimesNet']# , 'Transformer'
-        model_list =  ['PatchTST', 'SegRNN','TimeMixer','TimesNet','DUET','Autoformer','MICN']
+    if env == 'mqenv' or env == 'base':
+        # TODO 更新sota
+        model_list =  ['Autoformer', 'PatchTST', 'DLinear', 'LightTS', 'Pyraformer', 
+                        'MICN', 'Koopa', 'FEDformer', 'Reformer', 'SegRNN', 
+                        'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
+                        'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
+                        'SCINet', 'TemporalFusionTransformer', 'PAttn','TiDE' , 'TimesNet']# , 'Transformer'
+        model_list += ['DUET', 'RAFT', 'GPT4TS']
+        # model_list += ['FreDF', 'OLinear', 'TimeBridge', 'Timer', 'TimeLLM', 'Moment']
     elif env =='mamba':
          # 在虚拟环境mamba中运行
         model_list =  ['Mamba'] # ,'MambaSimple'
@@ -86,9 +128,16 @@ def create_task_list(param_devices, env):
             data_fea_num = df.loc[i, 'Dim']
             data_model_id = df.loc[i, 'model_id']
             
-            # if model_name in trained_model[data_model_id]:
-            #     continue
-            # else:
+            # 检查是否已训练
+            is_trained = False
+            if data_model_id in trained_model:
+                if model_name in trained_model[data_model_id]:
+                    is_trained = True
+            
+            if is_trained:
+                # print(f"Skipping trained model: {model_name} on {data_model_id}") # 可选：打印跳过信息
+                continue
+
             print(model_name, data_model_id)
                 
             # 不同数据对应不同的data，以及不同的root_path、data_path
@@ -125,8 +174,16 @@ def create_task_list(param_devices, env):
             elif model_name == 'TimesNet':
                 # 仿照已有sota设置参数，使得训练效率更高
                 d_model, d_ff = 64, 64
+            elif model_name == 'GPT4TS':
+                # 仿照已有sota设置参数，使得训练效率更高
+                d_model, d_ff = 768, 768
             else:
                 d_model, d_ff = 512, 2048
+
+            if model_name == 'GPT4TS':
+                is_gpt = 1
+            else:
+                is_gpt = 0
 
             if 'M4' in data_name:
                 # short-term
@@ -174,7 +231,8 @@ def create_task_list(param_devices, env):
                         --learning_rate 0.001 \
                         --devices {param_devices} \
                         --patch_len {patch_len} \
-                        --seg_len {patch_len} """
+                        --seg_len {patch_len} \
+                        --is_gpt {is_gpt}"""
                 task_list.append(task_command)
 
             else:
@@ -194,7 +252,7 @@ def create_task_list(param_devices, env):
                     batch_size = 32
                     learning_rate=0.0001
                     # Ili数据集预测长度不同
-                    if data_name == 'ili' or data_name == 'covid-19' or data_name == 'fred-md' :
+                    if data_name in ['ili', 'covid-19', 'fred-md', 'nyse', 'nasdaq'] :
                         pred_len = ili_pred_len_list[ii]
                         seq_len = 36
                         label_len = 18 # seq_len的一半
@@ -222,6 +280,9 @@ def create_task_list(param_devices, env):
                             # 参考scripts参数 seq_len = pred_len
                             seq_len = pred_len
                             label_len = 18
+                        elif model_name == 'RAFT':
+                            seq_len = 96
+                            learning_rate=0.01
                             
                         # TimeMixer 由于seq_len=36最多能被2除2次
                         down_sampling_layers = 1
@@ -246,6 +307,8 @@ def create_task_list(param_devices, env):
                             # 参考scripts参数
                             seq_len = pred_len
                             label_len = 48
+                        elif model_name == 'RAFT':
+                            seq_len = 720
 
                         # TimeMixer 参考其它sota
                         down_sampling_layers = 3
@@ -289,7 +352,8 @@ def create_task_list(param_devices, env):
                             --d_ff {d_ff} \
                             --batch_size {batch_size} \
                             --learning_rate {learning_rate} \
-                            --devices {param_devices}"""
+                            --devices {param_devices} \
+                            --is_gpt {is_gpt}"""
                     task_list.append(task_command)
     
     return task_list
@@ -298,11 +362,12 @@ def main():
     # 创建任务列表
     parser = argparse.ArgumentParser(description='TimesNet')
     parser.add_argument('--devices', type=str, default='0', help='device ids of multile gpus')
+    parser.add_argument('--dataset', type=str, default='ili', help='dataset name')
     parser.add_argument('--processes_num', type=int, default=1, help='processes')
     parser.add_argument('--env', type=str, default='mqenv', help='env')
     args = parser.parse_args()
     
-    task_list = create_task_list(args.devices, args.env)
+    task_list = create_task_list(args.devices, args.env, args.dataset)
 
     # 使用 multiprocessing.Pool 来并行运行任务
     with Pool(processes=args.processes_num) as pool:  # 设置进程池的大小（例如5个并行进程）

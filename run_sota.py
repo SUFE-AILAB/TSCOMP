@@ -51,7 +51,7 @@ def create_task_list(param_devices, env, dataset):
     df = pd.DataFrame(data, columns=["Dataset", "Domain", "Frequency", "Lengths", "Dim", "Split","model_id"])
     df['model_id'] = df['model_id'].fillna(df['Dataset'])
 
-    # df = df[df['Dataset'] == dataset]
+    df = df[df['Dataset'] == dataset].reset_index(drop=True)
 
     # 获取已训练的模型列表
     trained_model = {}
@@ -115,7 +115,7 @@ def create_task_list(param_devices, env, dataset):
                         'MICN', 'Koopa', 'FEDformer', 'Reformer', 'SegRNN', 
                         'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
                         'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
-                        'SCINet', 'TemporalFusionTransformer', 'PAttn','TiDE' , 'TimesNet']# , 'Transformer'
+                        'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
         model_list += ['DUET', 'RAFT', 'GPT4TS']
         # model_list += ['FreDF', 'OLinear', 'TimeBridge', 'Timer', 'TimeLLM', 'Moment']
     elif env =='mamba':

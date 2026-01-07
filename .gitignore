@@ -131,7 +131,7 @@ dmypy.json
 .pyre/
 .vscode/
 .idea
-scripts/
+# scripts/
 dataset/
 
 checkpoints/
@@ -147,12 +147,13 @@ result_long_term_forecast.txt
 result_anomaly_detection.txt
 run_anylearn.py
 environment.txt
-scripts/
+scripts/exp_*
+scripts/**/gym_*
 meta_learner_cc/*
 *.npz
 *.csv
 nohup.out
-**/*.sh
+# **/*.sh
 *.db
 *.log
 log

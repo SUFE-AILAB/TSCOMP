@@ -117,7 +117,7 @@ def create_task_list(param_devices, env, dataset):
                         'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
                         'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
         model_list += ['DUET', 'RAFT', 'GPT4TS']
-        # model_list += ['FreDF', 'OLinear', 'TimeBridge', 'Timer', 'TimeLLM', 'Moment']
+        # model_list += ['FreDF', 'OLinear', 'Timer', 'TimeLLM', 'Moment', 'TimeBridge']
     elif env =='mamba':
          # 在虚拟环境mamba中运行
         model_list =  ['Mamba'] # ,'MambaSimple'

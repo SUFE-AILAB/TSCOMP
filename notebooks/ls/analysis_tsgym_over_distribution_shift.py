@@ -457,7 +457,7 @@ for dataset in datasets:
                 
             #     print(f"------ 分析组件: {key} ------") 
 
-            #     save_path = f"/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/ls_figures/{dataset}_pl{pl}/{perturb_mode if perturb_mode else 'none'}_component_{key}_analysis.png"
+            #     save_path = f"/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/perturb_data_figures/{dataset}_pl{pl}/{perturb_mode if perturb_mode else 'none'}_component_{key}_analysis.png"
             #     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             #     evaluator = ModelEvaluator(modual_dict[key])
@@ -543,7 +543,7 @@ for dataset in datasets:
                 if not value: continue
                 print(f"------ 分析组件 (Avg PL - Norm): {key} ------")
                 
-                save_path = f"/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/ls_figures/{dataset}_plAvg_Norm/{perturb_mode if perturb_mode else 'none'}_component_{key}_analysis.png"
+                save_path = f"/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/perturb_data_figures/{dataset}_plAvg_Norm/{perturb_mode if perturb_mode else 'none'}_component_{key}_analysis.png"
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 
                 # 获取全局设置
@@ -563,7 +563,7 @@ for dataset in datasets:
         #     if not value: continue
         #     print(f"------ 分析组件 (Avg PL - Raw): {key} ------")
             
-        #     save_path = f"/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/ls_figures/{dataset}_plAvg/{perturb_mode if perturb_mode else 'none'}_component_{key}_analysis.png"
+        #     save_path = f"/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/perturb_data_figures/{dataset}_plAvg/{perturb_mode if perturb_mode else 'none'}_component_{key}_analysis.png"
         #     os.makedirs(os.path.dirname(save_path), exist_ok=True)
             
         #     evaluator = ModelEvaluator(modual_dict_avg[key])
@@ -581,7 +581,7 @@ print("\n" + "="*40)
 print("开始绘制全局对比图 (Global Comparison)...")
 print("="*40)
 
-global_save_root = "/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/ls_figures/global_comparison"
+global_save_root = "/data/nishome/user1/chaochuan/TSGym_benchmark/notebooks/perturb_data_figures/global_comparison"
 os.makedirs(global_save_root, exist_ok=True)
 
 # 辅助绘图函数

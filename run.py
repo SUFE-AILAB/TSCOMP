@@ -13,6 +13,75 @@ from utils.tools import GPUMemoryMonitor, init_db, log_start, log_end
 import random
 import sys
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
+
+def setting_generator(args, ii):
+    if args.task_name == 'short_term_forecast':
+        setting = '{}_{}_{}_ft{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
+            args.task_name.replace('short_term_forecast', 'STF'),
+            args.model,
+            # args.data,
+            args.model_id.split('_')[0], # Update by cc
+            args.features,
+            args.d_model,
+            args.e_layers,
+            args.d_layers,
+            args.d_ff,
+            args.factor,
+            args.embed,
+            args.distil,
+            args.des,
+            args.train_epochs,
+            args.loss,
+            args.learning_rate,
+            args.lradj, ii)
+    elif args.task_name == 'long_term_forecast':
+        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
+            args.task_name.replace('long_term_forecast', 'LTF'),
+            args.model,
+            args.model_id.split('_')[0], # Update by cc
+            args.features,
+            args.seq_len,
+            args.label_len,
+            args.pred_len,
+            args.d_model,
+            args.e_layers,
+            args.d_layers,
+            args.d_ff,
+            args.factor,
+            args.embed,
+            args.distil,
+            args.des,
+            args.train_epochs,
+            args.loss,
+            args.learning_rate,
+            args.lradj, ii)
+    elif args.task_name == 'finance_regressing':
+        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
+            args.task_name.replace('finance_regressing', 'FINREG'),
+            args.model,
+            args.model_id.split('_')[0], # Update by cc
+            args.features,
+            args.seq_len,
+            args.label_len,
+            args.pred_len,
+            args.d_model,
+            args.e_layers,
+            args.d_layers,
+            args.d_ff,
+            args.factor,
+            args.embed,
+            args.distil,
+            args.des,
+            args.train_epochs,
+            args.loss,
+            args.learning_rate,
+            args.lradj, ii)
+    else:
+        raise NotImplementedError
+    
+    return setting
 
 if __name__ == '__main__':
     fix_seed = 42
@@ -81,9 +150,9 @@ if __name__ == '__main__':
     parser.add_argument('--decomp_method', type=str, default='moving_avg',
                         help='method of series decompsition, only support moving_avg or dft_decomp')
     parser.add_argument('--use_norm', type=int, default=1, help='whether to use normalize; True 1 False 0')
-    parser.add_argument('--down_sampling_layers', type=int, default=0, help='num of down sampling layers')
-    parser.add_argument('--down_sampling_window', type=int, default=1, help='down sampling window size')
-    parser.add_argument('--down_sampling_method', type=str, default=None,
+    parser.add_argument('--down_sampling_layers', type=int, default=3, help='num of down sampling layers')
+    parser.add_argument('--down_sampling_window', type=int, default=2, help='down sampling window size')
+    parser.add_argument('--down_sampling_method', type=str, default='avg',
                         help='down sampling method, only support avg, max, conv')
     parser.add_argument('--seg_len', type=int, default=48,
                         help='the length of segmen-wise iteration of SegRNN')
@@ -187,6 +256,43 @@ if __name__ == '__main__':
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
     args.use_gpu = True if torch.cuda.is_available() else False
 
+    # 验证当前实验是否已经重复
+    setting = setting_generator(args, 0)
+    if 'TSGym' in setting:
+        if 'Transformer' in setting:
+            gym_type='transformer'  
+        elif 'LLM' in setting:
+            gym_type='LLM'
+        elif 'TSFM' in setting:
+            gym_type='TSFM'
+        elif 'MLP' in setting:
+            gym_type='MLP'
+        else:
+            gym_type='GRU'
+        dataset = args.model_id.split('_')[0]
+        folder_pathGym = f'./results_{args.task_name}ing/resultsGym_{gym_type}/{dataset}/{setting}/'
+        if os.path.exists(folder_pathGym):
+            print(f'Warning: The resultsGym folder {folder_pathGym} already exists! The experiment may be repeated!')
+            sys.exit(0)
+        if args.task_name == 'short_term_forecast':
+            folder_path1 = folder_pathGym + args.seasonal_patterns + '_forecast.csv'
+            folder_path2 = folder_pathGym + 'metrics.npz'
+            if os.path.exists(folder_path1) or os.path.exists(folder_path2):
+                print(f'Warning: The resultsGym folder {folder_path1} already exists! The experiment may be repeated!')
+                sys.exit(0)
+    else:
+        dataset = args.model_id.split('_')[0]
+        folder_path = f'./results_{args.task_name}ing/results/{dataset}/{setting}/'
+        if os.path.exists(folder_path):
+            print(f'Warning: The results folder {folder_path} already exists! The experiment may be repeated!')
+            sys.exit(0)
+        if args.task_name == 'short_term_forecast':
+            folder_path1 = folder_path + args.seasonal_patterns + '_forecast.csv'
+            folder_path2 = folder_path + 'metrics.npz'
+            if os.path.exists(folder_path1) or os.path.exists(folder_path2):
+                print(f'Warning: The resultsGym folder {folder_path1} already exists! The experiment may be repeated!')
+                sys.exit(0)
+
     print(torch.cuda.is_available())
 
     if args.use_gpu and args.use_multi_gpu:
@@ -205,7 +311,6 @@ if __name__ == '__main__':
     init_db(LOG_DB_PATH)
     monitor = GPUMemoryMonitor(device=torch.device('cuda'))
 
-
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast
     elif args.task_name == 'short_term_forecast':
@@ -220,75 +325,6 @@ if __name__ == '__main__':
         Exp = Exp_Finance_Regressing
     else:
         Exp = Exp_Long_Term_Forecast
-
-    def setting_generator(args, ii):
-        if args.task_name == 'short_term_forecast':
-            setting = '{}_{}_{}_ft{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
-                args.task_name.replace('short_term_forecast', 'STF'),
-                args.model,
-                # args.data,
-                args.model_id.split('_')[0], # Update by cc
-                args.features,
-                args.d_model,
-                args.e_layers,
-                args.d_layers,
-                args.d_ff,
-                args.factor,
-                args.embed,
-                args.distil,
-                args.des,
-                args.train_epochs,
-                args.loss,
-                args.learning_rate,
-                args.lradj, ii)
-        elif args.task_name == 'long_term_forecast':
-            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
-                args.task_name.replace('long_term_forecast', 'LTF'),
-                args.model,
-                args.model_id.split('_')[0], # Update by cc
-                args.features,
-                args.seq_len,
-                args.label_len,
-                args.pred_len,
-                args.d_model,
-                args.e_layers,
-                args.d_layers,
-                args.d_ff,
-                args.factor,
-                args.embed,
-                args.distil,
-                args.des,
-                args.train_epochs,
-                args.loss,
-                args.learning_rate,
-                args.lradj, ii)
-        elif args.task_name == 'finance_regressing':
-            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_epochs{}_lf{}_lr{}_lrs{}_{}'.format(
-                args.task_name.replace('finance_regressing', 'FINREG'),
-                args.model,
-                args.model_id.split('_')[0], # Update by cc
-                args.features,
-                args.seq_len,
-                args.label_len,
-                args.pred_len,
-                args.d_model,
-                args.e_layers,
-                args.d_layers,
-                args.d_ff,
-                args.factor,
-                args.embed,
-                args.distil,
-                args.des,
-                args.train_epochs,
-                args.loss,
-                args.learning_rate,
-                args.lradj, ii)
-        else:
-            raise NotImplementedError
-        
-        return setting
-
-
 
     if args.is_training:
         for ii in range(args.itr):
@@ -326,9 +362,11 @@ if __name__ == '__main__':
                 gym_type='LLM'
             elif 'TSFM' in setting:
                 gym_type='TSFM'
+            elif 'MLP' in setting:
+                gym_type='MLP'
             else:
-                gym_type='non_Transformer'
-            folder_pathGym = f'./results_{args.task_name}ing/results_{gym_type}/{dataset}/{setting}/'
+                gym_type='GRU'
+            folder_pathGym = f'./results_{args.task_name}ing/resultsGym_{gym_type}/{dataset}/{setting}/'
             if not os.path.exists(folder_path1) and not os.path.exists(folder_path2) and not os.path.exists(folder_pathGym):
                 try:
                     monitor.start()

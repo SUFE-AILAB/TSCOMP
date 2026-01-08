@@ -149,6 +149,12 @@ run_anylearn.py
 environment.txt
 scripts/exp_*
 scripts/**/gym_*
+kill.sh
+run_sota.sh
+debug.sh
+*.sh
+*.zip
+notebooks/perturb_data_figures/
 meta_learner_cc/*
 *.npz
 *.csv

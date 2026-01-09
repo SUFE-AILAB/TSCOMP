@@ -436,6 +436,31 @@ class Dataset_M4(Dataset):
             insample_mask[i, -len(ts):] = 1.0
         return insample, insample_mask
 
+class M4ValiDataset(Dataset):
+    def __init__(self, m4_dataset, args):
+        self.args = args
+        self.m4_dataset = m4_dataset
+        self.seq_len = m4_dataset.seq_len
+        self.pred_len = m4_dataset.pred_len
+        self.label_len = m4_dataset.label_len
+        self.root_path = m4_dataset.root_path
+        self.device = m4_dataset.device
+        self.data, self.mask = m4_dataset.last_insample_window()
+        
+    def __len__(self):
+        return len(self.data)
+        
+    def __getitem__(self, index):
+        insample = self.data[index].reshape(self.seq_len, 1)
+        insample_mask = self.mask[index].reshape(self.seq_len, 1)
+        outsample = np.zeros((self.pred_len + self.label_len, 1))
+        outsample_mask = np.zeros_like(outsample)
+        
+        if getattr(self.args, 'use_rag', False):
+            return insample, outsample, insample_mask, outsample_mask, index
+        else:
+            return insample, outsample, insample_mask, outsample_mask
+
 class PSMSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=1, flag="train"):
         self.flag = flag

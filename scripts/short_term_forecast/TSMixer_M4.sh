@@ -1,6 +1,6 @@
 #
 
-model_name=MTSMixer
+model_name=TSMixer
 
 python3 -u run.py \
   --task_name short_term_forecast \

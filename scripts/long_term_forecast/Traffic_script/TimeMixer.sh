@@ -17,7 +17,7 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/traffic/ \
   --data_path traffic.csv \
-  --model_id Traffic_$seq_len'_'96 \
+  --model_id traffic_$seq_len'_'96 \
   --model $model_name \
   --data custom \
   --features M \
@@ -45,7 +45,7 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/traffic/ \
   --data_path traffic.csv \
-  --model_id Traffic_$seq_len'_'192 \
+  --model_id traffic_$seq_len'_'192 \
   --model $model_name \
   --data custom \
   --features M \
@@ -73,7 +73,7 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/traffic/ \
   --data_path traffic.csv \
-  --model_id Traffic_$seq_len'_'336 \
+  --model_id traffic_$seq_len'_'336 \
   --model $model_name \
   --data custom \
   --features M \
@@ -101,7 +101,7 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/traffic/ \
   --data_path traffic.csv \
-  --model_id Traffic_$seq_len'_'720 \
+  --model_id traffic_$seq_len'_'720 \
   --model $model_name \
   --data custom \
   --features M \

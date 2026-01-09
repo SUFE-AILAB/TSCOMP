@@ -21,7 +21,8 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --learning_rate 0.002 \
-  --loss 'SMAPE'
+  --loss 'SMAPE'\
+  --is_gpt 1
 
 python -u run.py \
   --task_name short_term_forecast \
@@ -45,7 +46,8 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --learning_rate 0.001 \
-  --loss 'SMAPE'
+  --loss 'SMAPE'\
+  --is_gpt 1
 
 python -u run.py \
   --task_name short_term_forecast \
@@ -68,7 +70,8 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --learning_rate 0.001 \
-  --loss 'SMAPE'
+  --loss 'SMAPE'\
+  --is_gpt 1
 
 python -u run.py \
   --task_name short_term_forecast \
@@ -91,7 +94,8 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --learning_rate 0.001 \
-  --loss 'SMAPE'
+  --loss 'SMAPE'\
+  --is_gpt 1
 
 python -u run.py \
   --task_name short_term_forecast \
@@ -114,7 +118,8 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --learning_rate 0.001 \
-  --loss 'SMAPE'
+  --loss 'SMAPE'\
+  --is_gpt 1
 
 python -u run.py \
   --task_name short_term_forecast \
@@ -137,4 +142,5 @@ python -u run.py \
   --des 'Exp' \
   --itr 1 \
   --learning_rate 0.001 \
-  --loss 'SMAPE'
+  --loss 'SMAPE'\
+  --is_gpt 1

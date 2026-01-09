@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 import pandas
 import shutil
+
 warnings.filterwarnings('ignore')
 
 
@@ -141,6 +142,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     iter_count += 1
                     model_optim.zero_grad()
                     batch_x = batch_x.float().to(self.device)
+
                     batch_y = batch_y.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
 
@@ -195,7 +197,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 test_loss = vali_loss
                 print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-                early_stopping(vali_loss, self.model, path)
+                early_stopping(vali_loss, self.model, best_model_path)
                 if early_stopping.early_stop:
                     print("Early stopping")
                     break

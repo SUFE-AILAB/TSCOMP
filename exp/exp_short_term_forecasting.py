@@ -107,7 +107,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         path = os.path.join(f'{self.args.checkpoints}{self.save_suffix}/', setting)
         if not os.path.exists(path):
-            os.makedirs(path)
+            os.makedirs(path, exist_ok=True)
 
         time_now = time.time()
 
@@ -118,7 +118,11 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         criterion = self._select_criterion(self.args.loss)
         # mse = nn.MSELoss()
 
-        best_model_path = path + '/' + 'checkpoint.pth'
+        if self.args.data == 'm4':
+            best_model_path = path + '/' + f'checkpoint_{self.args.seasonal_patterns}.pth'
+        else:
+            best_model_path = path + '/' + 'checkpoint.pth'
+            
         if os.path.exists(best_model_path):
             self.logger.info(f'The model file already exists! loading...')
             self.model.load_state_dict(torch.load(best_model_path))
@@ -233,7 +237,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 rag_raw_data = None
                 if getattr(self.args, 'use_rag', False):
                     if self.args.model != 'RAFT':
-                         rag_raw_data = self.model.fetch_batch(batch_indices, mode='valid')
+                         rag_raw_data = self.model.fetch_batch(batch_indices, mode='valid') # TODO 这个index不是我们预处理时的Index
 
                 if self.args.model == 'RAFT':
                     outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, batch_indices, mode='valid').detach().cpu()
@@ -264,7 +268,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         checkpoint_path = f'./checkpoints{self.save_suffix}/' + setting
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
+            if self.args.data == 'm4':
+                self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, f'checkpoint_{self.args.seasonal_patterns}.pth')))
+            else:
+                self.model.load_state_dict(torch.load(os.path.join(checkpoint_path, 'checkpoint.pth')))
 
         # folder_path = f'./test_results{self.save_suffix}/' + setting + '/'
         # if not os.path.exists(folder_path):
@@ -363,11 +370,19 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             # for csv in csv_files:
             #     if os.path.isfile(os.path.join(folder_path, csv)):
             #         os.remove(os.path.join(folder_path, csv))
+
+            return_results = f"smape:{smape_results}, mape:{mape}, mase:{mase}, owa:{owa_results}"
         else:
             self.logger.info('After all 6 tasks are finished, you can calculate the averaged index')
 
+            return_results = "After all 6 tasks are finished, you can calculate the averaged index"
+
 
         if os.path.exists(checkpoint_path):
-            shutil.rmtree(checkpoint_path)
+             if self.args.data == 'm4':
+                if os.path.exists(os.path.join(checkpoint_path, f'checkpoint_{self.args.seasonal_patterns}.pth')):
+                    os.remove(os.path.join(checkpoint_path, f'checkpoint_{self.args.seasonal_patterns}.pth'))
+             else:
+                shutil.rmtree(checkpoint_path)
 
-        return f"smape:{smape_results}, mape:{mape}, mase:{mase}, owa:{owa_results}"
+        return return_results

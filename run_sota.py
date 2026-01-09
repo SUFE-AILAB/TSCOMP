@@ -198,6 +198,13 @@ def create_task_list(param_devices, env, dataset):
                         d_ff, d_model = 16, 16
                     elif 'Quarterly' in data_name:
                         d_ff, d_model = 64, 64
+                
+                if 'Yearly' in data_name or 'Monthly' in data_name or 'Daily' in data_name:
+                    n_period = 2
+                elif 'Weekly' in data_name:  
+                    n_period = 1
+                else:
+                    n_period = 3
 
                 seasonal_patterns = data_model_id.split('_')[-1]
                 # TimeXer SegRNN
@@ -232,7 +239,8 @@ def create_task_list(param_devices, env, dataset):
                         --devices {param_devices} \
                         --patch_len {patch_len} \
                         --seg_len {patch_len} \
-                        --is_gpt {is_gpt}"""
+                        --is_gpt {is_gpt} \
+                        --n_period {n_period}"""
                 task_list.append(task_command)
 
             else:

@@ -107,12 +107,22 @@ class TSGymRetrievalTool():
 
         for i in range(len(train_data)):
             td = train_data[i]
-            train_data_all.append(td[0])
+            
+            # Ensure scalar or array is converted to tensor
+            if isinstance(td[0], np.ndarray):
+                train_data_all.append(torch.from_numpy(td[0]))
+            else:
+                train_data_all.append(td[0])
             
             if self.with_dec:
-                y_data_all.append(td[1][-(train_data.pred_len + train_data.label_len):])
+                y_slice = td[1][-(train_data.pred_len + train_data.label_len):]
             else:
-                y_data_all.append(td[1][-train_data.pred_len:])
+                y_slice = td[1][-train_data.pred_len:]
+                
+            if isinstance(y_slice, np.ndarray):
+                y_data_all.append(torch.from_numpy(y_slice))
+            else:
+                y_data_all.append(y_slice)
             
         self.train_data_all = torch.stack(train_data_all, dim=0).float()
         self.train_data_all_mg, _ = self.decompose_mg(self.train_data_all)
@@ -231,7 +241,7 @@ class TSGymRetrievalTool():
         # y_data_flat:  (Parallel, T, Feature_Dim)
         # CI 模式: (G*C, B, T) * (G*C, T, P) -> (G*C, B, P)
         # Joint 模式: (G, B, T) * (G, T, P*C) -> (G, B, P*C)
-        pred_from_retrieval = torch.bmm(ranking_prob, y_data_flat)
+        pred_from_retrieval = torch.bmm(ranking_prob, y_data_flat.to(x.device))
 
         if self.channel_independence:
             # CI Output: (G*C, B, P) -> 还原为 (G, C, B, P) -> 转置为 (G, B, P, C)
@@ -426,12 +436,22 @@ class RetrievalTool():
 
         for i in range(len(train_data)):
             td = train_data[i]
-            train_data_all.append(td[0])
+            
+            # Ensure scalar or array is converted to tensor
+            if isinstance(td[0], np.ndarray):
+                train_data_all.append(torch.from_numpy(td[0]))
+            else:
+                train_data_all.append(td[0])
             
             if self.with_dec:
-                y_data_all.append(td[1][-(train_data.pred_len + train_data.label_len):])
+                y_slice = td[1][-(train_data.pred_len + train_data.label_len):]
             else:
-                y_data_all.append(td[1][-train_data.pred_len:])
+                y_slice = td[1][-train_data.pred_len:]
+
+            if isinstance(y_slice, np.ndarray):
+                y_data_all.append(torch.from_numpy(y_slice))
+            else:
+                y_data_all.append(y_slice)
             
         self.train_data_all = torch.stack(train_data_all, dim=0).float()
         self.train_data_all_mg, _ = self.decompose_mg(self.train_data_all)
@@ -535,7 +555,7 @@ class RetrievalTool():
         
         y_data_all = self.y_data_all_mg.flatten(start_dim=2) # G, T, P * C
         
-        pred_from_retrieval = torch.bmm(ranking_prob, y_data_all).reshape(self.n_period, bsz, -1, channels)
+        pred_from_retrieval = torch.bmm(ranking_prob, y_data_all.to(x.device)).reshape(self.n_period, bsz, -1, channels)
         pred_from_retrieval = pred_from_retrieval.to(x.device)
         
         return pred_from_retrieval

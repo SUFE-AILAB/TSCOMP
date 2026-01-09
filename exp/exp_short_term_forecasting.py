@@ -2,7 +2,7 @@ from data_provider.data_factory import data_provider
 from data_provider.m4 import M4Meta
 from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from utils.losses import mape_loss, mase_loss, smape_loss
+from utils.losses import PSLoss, mape_loss, mase_loss, smape_loss, FreDFLoss, DBLoss
 from utils.m4_summary import M4Summary
 import torch
 import torch.nn as nn
@@ -13,7 +13,6 @@ import warnings
 import numpy as np
 import pandas
 import shutil
-
 warnings.filterwarnings('ignore')
 
 
@@ -35,7 +34,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         else:
             model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
             gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
-            gym_encoder_only, gym_frozen = self.args.model.split('_')
+            gym_encoder_only, gym_frozen, gym_rag = self.args.model.split('_')
             model_name = 'TSGym'
             model = self.model_dict[model_name].Model(self.args,
                                                       gym_x_mark=gym_x_mark,
@@ -48,11 +47,27 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                                                       gym_attn=gym_attn,
                                                       gym_feature_attn=gym_feature_attn,
                                                       gym_encoder_only=gym_encoder_only,
-                                                      gym_frozen=gym_frozen).float()
+                                                      gym_frozen=gym_frozen,
+                                                      gym_rag=gym_rag).float()
             self.save_suffix = 'Gym'
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
+
+        if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
+            self.args.use_rag = True
+            train_data, _ = self._get_data(flag='train')
+            vali_data, _ = self._get_data(flag='val')
+            test_data, _ = self._get_data(flag='test')
+            
+            if 'traffic' in self.args.data_path or 'electricity' in self.args.data_path:
+                # Move data to CPU to save GPU memory during retrieval preparation
+                for data in [train_data, vali_data, test_data]:
+                    if hasattr(data, 'data_x') and data.data_x is not None: data.data_x = data.data_x.cpu()
+                    if hasattr(data, 'data_y') and data.data_y is not None: data.data_y = data.data_y.cpu()
+                    if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
+
+            model.prepare_dataset(train_data, vali_data, test_data)
         return model
 
     def _get_data(self, flag):
@@ -63,7 +78,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
-    def _select_criterion(self, loss_name='MSE'):
+    def _select_criterion(self, loss_name='SMAPE'):
         if loss_name == 'MSE':
             return nn.MSELoss()
         elif loss_name == 'MAPE':
@@ -72,6 +87,18 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             return mase_loss()
         elif loss_name == 'SMAPE':
             return smape_loss()
+        elif loss_name == 'HUBER':
+            return nn.HuberLoss(delta=0.5)
+        elif loss_name == "DBLoss":
+            return DBLoss(alpha=self.args.DBLossalpha, beta=self.args.DBLossbeta)
+        elif loss_name == 'PSLoss':
+            self.ps_loss = PSLoss(patch_len_threshold=self.args.patch_len_threshold)
+            return smape_loss()
+        elif loss_name == 'FreDFLoss':
+            self.fredf_loss = FreDFLoss(self.args, self.device)
+            return smape_loss()
+        else:
+            raise NotImplementedError
 
     def train(self, setting):
         train_data, train_loader = self._get_data(flag='train')
@@ -102,11 +129,18 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
                 self.model.train()
                 epoch_time = time.time()
-                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                for i, batch_data in enumerate(train_loader):
+                    batch_x, batch_y, batch_x_mark, batch_y_mark = batch_data[0], batch_data[1], batch_data[2], batch_data[3]
+                    rag_raw_data = None
+                    if getattr(self.args, 'use_rag', False):
+                        index = batch_data[4].to(self.device)
+                        if self.args.model != 'RAFT':
+                            with torch.no_grad(): # 通常检索过程不需要梯度传导回数据库
+                                rag_raw_data = self.model.fetch_batch(index, mode='train')
+
                     iter_count += 1
                     model_optim.zero_grad()
                     batch_x = batch_x.float().to(self.device)
-
                     batch_y = batch_y.float().to(self.device)
                     batch_y_mark = batch_y_mark.float().to(self.device)
 
@@ -114,7 +148,12 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
                     dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
-                    outputs = self.model(batch_x, None, dec_inp, None)
+                    if self.args.model == 'RAFT':
+                        outputs = self.model(batch_x, index, mode='train')
+                    elif getattr(self.args, 'use_rag', False):
+                        outputs = self.model(batch_x, None, dec_inp, None, rag_raw_data=rag_raw_data)
+                    else:
+                        outputs = self.model(batch_x, None, dec_inp, None)
 
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -124,7 +163,18 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
                     # loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
                     loss = loss_value  # + loss_sharpness * 1e-5
-
+                    # Add aux Loss
+                    if self.args.loss == 'PSLoss':
+                        ps_loss = self.ps_loss(batch_y, outputs, self.model)
+                        loss += ps_loss * self.args.ps_lambda
+                    elif self.args.loss == 'FreDFLoss': 
+                        if self.args.auxi_lambda:
+                            loss = (1 - self.args.auxi_lambda) * loss
+                        fredf_loss = self.fredf_loss(outputs, batch_y)
+                        loss += self.args.auxi_lambda * fredf_loss
+                    else:
+                        pass
+                    
                     train_loss.append(loss.item())
 
                     if (i + 1) % 100 == 0:
@@ -174,9 +224,22 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             id_list = np.arange(0, B, 500)  # validation set size
             id_list = np.append(id_list, B)
             for i in range(len(id_list) - 1):
-                outputs[id_list[i]:id_list[i + 1], :, :] = self.model(x[id_list[i]:id_list[i + 1]], None,
-                                                                      dec_inp[id_list[i]:id_list[i + 1]],
-                                                                      None).detach().cpu()
+                batch_x = x[id_list[i]:id_list[i + 1]]
+                batch_dec_inp = dec_inp[id_list[i]:id_list[i + 1]]
+                batch_indices = torch.arange(id_list[i], id_list[i+1], dtype=torch.long).to(self.device)
+
+                rag_raw_data = None
+                if getattr(self.args, 'use_rag', False):
+                    if self.args.model != 'RAFT':
+                         rag_raw_data = self.model.fetch_batch(batch_indices, mode='valid')
+
+                if self.args.model == 'RAFT':
+                    outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, batch_indices, mode='valid').detach().cpu()
+                elif getattr(self.args, 'use_rag', False):
+                    outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, None, batch_dec_inp, None, rag_raw_data=rag_raw_data).detach().cpu()
+                else:
+                    outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, None, batch_dec_inp, None).detach().cpu()
+
             f_dim = -1 if self.args.features == 'MS' else 0
             outputs = outputs[:, -self.args.pred_len:, f_dim:]
             pred = outputs
@@ -215,8 +278,21 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             id_list = np.arange(0, B, 1)
             id_list = np.append(id_list, B)
             for i in range(len(id_list) - 1):
-                outputs[id_list[i]:id_list[i + 1], :, :] = self.model(x[id_list[i]:id_list[i + 1]], None,
-                                                                      dec_inp[id_list[i]:id_list[i + 1]], None)
+                batch_x = x[id_list[i]:id_list[i + 1]]
+                batch_dec_inp = dec_inp[id_list[i]:id_list[i + 1]]
+                batch_indices = torch.arange(id_list[i], id_list[i+1], dtype=torch.long).to(self.device)
+                
+                rag_raw_data = None
+                if getattr(self.args, 'use_rag', False):
+                    if self.args.model != 'RAFT':
+                        rag_raw_data = self.model.fetch_batch(batch_indices, mode='test')
+
+                if self.args.model == 'RAFT':
+                     outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, batch_indices, mode='test')
+                elif getattr(self.args, 'use_rag', False):
+                     outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, None, batch_dec_inp, None, rag_raw_data=rag_raw_data)
+                else:
+                     outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, None, batch_dec_inp, None)
 
                 if id_list[i] % 1000 == 0:
                     print(id_list[i])

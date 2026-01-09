@@ -1,4 +1,5 @@
 from data_provider.data_factory import data_provider
+from data_provider.data_loader import M4ValiDataset
 from data_provider.m4 import M4Meta
 from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
@@ -15,7 +16,6 @@ import pandas
 import shutil
 
 warnings.filterwarnings('ignore')
-
 
 class Exp_Short_Term_Forecast(Exp_Basic):
     def __init__(self, args):
@@ -58,15 +58,17 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
             self.args.use_rag = True
             train_data, _ = self._get_data(flag='train')
-            vali_data, _ = self._get_data(flag='val')
-            test_data, _ = self._get_data(flag='test')
+            
+            rag_vali_data = M4ValiDataset(train_data, self.args)
+            vali_data = rag_vali_data
+            test_data = rag_vali_data
             
             if 'traffic' in self.args.data_path or 'electricity' in self.args.data_path:
                 # Move data to CPU to save GPU memory during retrieval preparation
-                for data in [train_data, vali_data, test_data]:
-                    if hasattr(data, 'data_x') and data.data_x is not None: data.data_x = data.data_x.cpu()
-                    if hasattr(data, 'data_y') and data.data_y is not None: data.data_y = data.data_y.cpu()
-                    if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
+                for data in [train_data]:
+                     if hasattr(data, 'data_x') and data.data_x is not None: data.data_x = data.data_x.cpu()
+                     if hasattr(data, 'data_y') and data.data_y is not None: data.data_y = data.data_y.cpu()
+                     if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
 
             model.prepare_dataset(train_data, vali_data, test_data)
         return model
@@ -237,7 +239,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                 rag_raw_data = None
                 if getattr(self.args, 'use_rag', False):
                     if self.args.model != 'RAFT':
-                         rag_raw_data = self.model.fetch_batch(batch_indices, mode='valid') # TODO 这个index不是我们预处理时的Index
+                         rag_raw_data = self.model.fetch_batch(batch_indices, mode='valid')
 
                 if self.args.model == 'RAFT':
                     outputs[id_list[i]:id_list[i + 1], :, :] = self.model(batch_x, batch_indices, mode='valid').detach().cpu()

@@ -1,0 +1,31 @@
+{
+    "datasets": [
+      "ETTh1",
+      "ETTh2",
+      "ETTm1",
+      "ETTm2",
+      "weather"
+    ],
+    "models": [
+      "DLinear",
+      "PatchTST",
+      "TimesNet",
+      "PAttn",
+      "TimeXer",
+      "iTransformer",
+      "FreTS",
+      "FEDformer",
+      "Nonstationary_Transformer",
+      "LightTS",
+      "Informer",
+      "Autoformer"
+    ],
+    "forecast_settings": [
+      [96, 48, 96]
+    ],
+    "override_args": {
+        "use_gpu": true,
+        "gpu": 0
+    }
+  }
+  

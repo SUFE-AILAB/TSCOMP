@@ -347,3 +347,41 @@ class DBLoss(nn.Module):
         trend_loss = self.mae(pred_trend, target_trend)
         trend_loss = trend_loss * (season_loss / (trend_loss + 1e-8)).detach()
         return self.beta * season_loss + (1 - self.beta) * trend_loss
+    
+class WeightedL1Loss:
+    def __init__(self, alpha, loss_mode):
+        self.alpha = alpha
+        self.loss_mode = loss_mode
+        if self.loss_mode == 'L1':
+            self.loss_fun = nn.L1Loss(reduction='none')
+        elif self.loss_mode == 'L2':
+            self.loss_fun = nn.MSELoss(reduction='none')
+        elif self.loss_mode == 'L1L2':
+            self.loss_fun1 = nn.L1Loss(reduction='none')
+            self.loss_fun2 = nn.MSELoss(reduction='none')
+
+    def __call__(self, pred, gt):
+        # [b,l,n]
+        if pred.ndim == 1:
+            # imputation
+            mask = torch.isnan(gt)
+            if torch.any(mask):
+                # pred, gt = pred.masked_fill(mask, 0), gt.masked_fill(mask, 0)
+                pred, gt = pred[~mask], gt[~mask]
+
+            loss_fun = nn.L1Loss(reduction='mean')
+            weightedLoss = loss_fun(pred, gt)
+        else:
+            L = pred.shape[1]
+            weights = (torch.tensor([(i + 1) ** (-self.alpha) for i in range(L)]).unsqueeze(dim=0).unsqueeze(dim=-1)
+                       .to(pred.device))
+            if self.loss_mode in ['L1', 'L2']:
+                loss_vec = self.loss_fun(pred, gt)
+                weightedLoss = torch.mean(loss_vec * weights)
+            elif self.loss_mode == 'L1L2':
+                loss_vec = self.loss_fun1(pred, gt)
+                loss_vec2 = self.loss_fun2(pred, gt)
+                weightedLoss = torch.mean(loss_vec * weights + loss_vec2 * weights)
+            else:
+                raise NotImplementedError
+        return weightedLoss

@@ -14,7 +14,7 @@ from utils.dtw_metric import dtw,accelerated_dtw
 from utils.augmentation import run_augmentation,run_augmentation_single
 import shutil
 import glob
-from utils.losses import MAPELoss, PSLoss, FreDFLoss, DBLoss
+from utils.losses import MAPELoss, PSLoss, FreDFLoss, DBLoss,WeightedL1Loss
 warnings.filterwarnings('ignore')
 
 
@@ -92,6 +92,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         elif self.args.loss == 'FreDFLoss':
             criterion = nn.MSELoss()
             self.fredf_loss = FreDFLoss(self.args, self.device)
+        elif self.args.loss == 'WeightedL1':
+            criterion = WeightedL1Loss(alpha=0.5, loss_mode='L1')
         else:
             raise NotImplementedError
         return criterion
@@ -428,7 +430,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # 恢复原始 data_path
         self.args.data_path = original_data_path
         
-        if os.path.exists(checkpoint_path):
-            shutil.rmtree(checkpoint_path)
+        # if os.path.exists(checkpoint_path):
+        #     shutil.rmtree(checkpoint_path)
 
         return "\n".join(test_results)

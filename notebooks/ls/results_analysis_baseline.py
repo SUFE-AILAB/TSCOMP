@@ -163,11 +163,11 @@ if __name__ == "__main__":
                         rank1_counts[col] += 1
                         
     # Append count row
-    final_df = pd.concat([final_df, rank1_counts.to_frame().T])
+    df_with_counts = pd.concat([final_df, rank1_counts.to_frame().T])
     
-    print(final_df)
+    print(df_with_counts)
     
-    # Save to Excel with Highlighting
+    # Save to Excel with Highlighting (Original Layout)
     try:
         def highlight_best(data):
             # Ensure we are working with correct subset
@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
             return styles
 
-        styled_df = final_df.style.apply(highlight_best, axis=None)
+        styled_df = df_with_counts.style.apply(highlight_best, axis=None)
         # Format numbers
         styled_df = styled_df.format("{:.3f}")
         
@@ -226,8 +226,48 @@ if __name__ == "__main__":
         styled_df.to_excel(output_path)
         print(f"Saved to {output_path} with highlighting.")
         
+        # --- Create View Version (Stacked Metrics) ---
+        # Use valid columns only
+        view_df = final_df.copy() # final_df does NOT have count row, df_with_counts does
+        # Stack Metric (level 1 of columns)
+        # Columns: (Model, Metric) -> Stack Level 1 -> Index: (Dataset, Length, Metric), Cols: Model
+        view_df = view_df.stack(level=1)
+        
+        # Define simple highlighter for view version
+        def highlight_best_view(data):
+            styles = pd.DataFrame('', index=data.index, columns=data.columns)
+            for idx in data.index:
+                row = data.loc[idx]
+                # Collect valid values
+                val_dict = {}
+                for col in data.columns:
+                    val = row[col]
+                    if pd.notna(val):
+                        val_dict[col] = val
+                
+                if not val_dict: continue
+                
+                unique_vals = sorted(list(set(val_dict.values())))
+                if len(unique_vals) >= 1:
+                    best = unique_vals[0]
+                    for k, v in val_dict.items():
+                        if v == best: styles.loc[idx, k] = 'font-weight: bold; color: red'
+                if len(unique_vals) >= 2:
+                    second = unique_vals[1]
+                    for k, v in val_dict.items():
+                         if v == second: styles.loc[idx, k] = 'font-weight: bold; color: blue'
+            return styles
+
+        styled_view = view_df.style.apply(highlight_best_view, axis=None)
+        styled_view = styled_view.format("{:.3f}")
+        
+        view_path = "notebooks/ls/full_baseline_results_view.xlsx"
+        styled_view.to_excel(view_path)
+        print(f"Saved view version to {view_path} with highlighting.")
+
+        
     except Exception as e:
         print(f"Could not save to Excel: {e}")
         # Fallback to saving CSV without styling
-        final_df.to_csv("notebooks/ls/full_baseline_results.csv")
+        df_with_counts.to_csv("notebooks/ls/full_baseline_results.csv")
         print("Saved to notebooks/ls/full_baseline_results.csv (no styling)")

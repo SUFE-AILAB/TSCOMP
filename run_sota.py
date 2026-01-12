@@ -3,7 +3,7 @@ import subprocess
 from multiprocessing import Pool
 import argparse
 import os
-
+from models.TSGym import get_q_mat_path
 def run_task(task_command, task_id):
     try:
         # 使用 subprocess 来执行 shell 命令
@@ -116,8 +116,8 @@ def create_task_list(param_devices, env, dataset):
                         'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
                         'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
                         'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
-        model_list += ['DUET', 'RAFT', 'GPT4TS']
-        # model_list += ['FreDF', 'OLinear', 'Timer', 'TimeLLM', 'Moment', 'TimeBridge']
+        model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear', ]
+        # model_list += ['Timer', 'TimeLLM', 'Moment', 'TimeBridge']
     elif env =='mamba':
          # 在虚拟环境mamba中运行
         model_list =  ['Mamba'] # ,'MambaSimple'
@@ -154,7 +154,7 @@ def create_task_list(param_devices, env, dataset):
                 root_path = data_name
                 data_type = 'custom'
             data_path = 'national_illness' if data_name == 'ili' else data_name
-            
+
             # ETS模型结构决定encoder和decoder必须是一样的层数
             e_layers, d_layers = (2, 2) if model_name == 'ETSformer' else (2, 1)
             
@@ -177,6 +177,8 @@ def create_task_list(param_devices, env, dataset):
             elif model_name == 'GPT4TS':
                 # 仿照已有sota设置参数，使得训练效率更高
                 d_model, d_ff = 768, 768
+            elif model_name == 'OLinear':
+                d_model, d_ff = 512, 512
             else:
                 d_model, d_ff = 512, 2048
 
@@ -295,7 +297,7 @@ def create_task_list(param_devices, env, dataset):
                         elif model_name == 'RAFT':
                             seq_len = 96
                             learning_rate=0.01
-                        elif model_name == 'TimeMixer':
+                        elif model_name == 'TimeMixer' or model_name == 'OLinear':
                             label_len = 0
                             
                         # TimeMixer 由于seq_len=36最多能被2除2次
@@ -323,6 +325,8 @@ def create_task_list(param_devices, env, dataset):
                             label_len = 48
                         elif model_name == 'RAFT':
                             seq_len = 720
+                        elif model_name == 'TimeMixer' or model_name == 'OLinear':
+                            label_len = 0
 
                         # TimeMixer 参考其它sota
                         down_sampling_layers = 3
@@ -333,11 +337,16 @@ def create_task_list(param_devices, env, dataset):
                                 batch_size=4
                             if data_model_id == 'traffic':
                                 batch_size=2
-                        if model_name == 'TimeMixer':
+                        if model_name == 'TimeMixer' or model_name == 'OLinear':
                             # 仿照已有sota设置参数，使得训练效率更高
                             batch_size=16
                             learning_rate=0.01
-                            
+                    if model_name == 'OLinear':
+                        q_mat_path, q_out_mat_path = get_q_mat_path(seq_len, pred_len, data_name)
+                        loss = 'WeightedL1'
+                    else:
+                        q_mat_path, q_out_mat_path = '',''
+                        loss = 'MSE'
                     task_command = f"""CUDA_VISIBLE_DEVICES={param_devices} python3 -u run.py \
                             --task_name long_term_forecast \
                             --is_training 1 \
@@ -367,7 +376,10 @@ def create_task_list(param_devices, env, dataset):
                             --batch_size {batch_size} \
                             --learning_rate {learning_rate} \
                             --devices {param_devices} \
-                            --is_gpt {is_gpt}"""
+                            --is_gpt {is_gpt} \
+                            --loss {loss} \
+                            --q_mat_dir {q_mat_path} \
+                            --q_out_mat_dir {q_out_mat_path} """
                     task_list.append(task_command)
     
     return task_list

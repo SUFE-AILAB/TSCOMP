@@ -7,6 +7,8 @@ for pred_len in 96 192 336 720
 do
 
 python main.py \
+    --task_name long_term_forecast \
+    --is_training 1 \
     --root_path ./datasets/electricity/ \
     --data_path electricity.csv \
     --model_id ECL_$model'_'$seq_len'_'$pred_len \
@@ -30,5 +32,4 @@ python main.py \
     --model $model \
     --tmax 10 \
     --is_gpt 1
-done
 done

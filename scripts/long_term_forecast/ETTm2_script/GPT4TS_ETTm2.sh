@@ -9,6 +9,8 @@ for pred_len in 96 192 336 729
 do
 
 python main.py \
+    --task_name long_term_forecast \
+    --is_training 1 \
     --root_path ./datasets/ETT-small/ \
     --data_path ETTm2.csv \
     --model_id ETTm2_$model'_'$seq_len'_'$pred_len \

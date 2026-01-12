@@ -10,6 +10,8 @@ for percent in 100
 do
 
 python main.py \
+    --task_name long_term_forecast \
+    --is_training 1 \
     --root_path ./datasets/illness/ \
     --data_path national_illness.csv \
     --model_id illness_$model'_'$gpt_layer'_'$seq_len'_'$pred_len'_'$percent \

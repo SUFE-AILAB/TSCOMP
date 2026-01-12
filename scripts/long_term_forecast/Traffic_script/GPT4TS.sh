@@ -1,15 +1,13 @@
 seq_len=512
 model=GPT4TS
 
-for percent in 100
-do
 for pred_len in 96 192 336 720
 do
 
-python main.py \
+python run.py \
     --task_name long_term_forecast \
     --is_training 1 \
-    --root_path ./datasets/traffic/ \
+    --root_path ./dataset/traffic/ \
     --data_path traffic.csv \
     --model_id traffic_$model'_'$seq_len'_'$pred_len \
     --data custom \
@@ -32,5 +30,4 @@ python main.py \
     --tmax 10 \
     --is_gpt 1
 
-done
 done

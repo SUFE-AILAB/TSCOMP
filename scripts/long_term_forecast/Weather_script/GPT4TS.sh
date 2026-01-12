@@ -3,15 +3,13 @@ export CUDA_VISIBLE_DEVICES=0
 seq_len=512
 model=GPT4TS
 
-for percent in 100
-do
 for pred_len in 96 192 336 720
 do
 
-python main.py \
+python run.py \
     --task_name long_term_forecast \
     --is_training 1 \
-    --root_path ./datasets/weather/ \
+    --root_path ./dataset/weather/ \
     --data_path weather.csv \
     --model_id weather_$model'_'$seq_len'_'$pred_len \
     --data custom \
@@ -35,5 +33,4 @@ python main.py \
     --model $model \
     --is_gpt 1
     
-done
 done

@@ -83,11 +83,7 @@ def setting_generator(args, ii):
     
     return setting
 
-if __name__ == '__main__':
-    fix_seed = 42
-    random.seed(fix_seed)
-    torch.manual_seed(fix_seed)
-    np.random.seed(fix_seed)
+def get_parser():
 
     parser = argparse.ArgumentParser(description='TimesNet')
 
@@ -251,7 +247,15 @@ if __name__ == '__main__':
     # OLinear
     parser.add_argument('--q_mat_dir', type=str, default='q_mat.npy', help='Olinear q_mat_dir')
     parser.add_argument('--q_out_mat_dir', type=str, default='q_out_mat.npy', help='Olinear q_out_mat_dir')
-    
+    return parser
+
+if __name__ == '__main__':
+    fix_seed = 42
+    random.seed(fix_seed)
+    torch.manual_seed(fix_seed)
+    np.random.seed(fix_seed)
+
+    parser = get_parser()
     args = parser.parse_args()
     # args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
     args.use_gpu = True if torch.cuda.is_available() else False

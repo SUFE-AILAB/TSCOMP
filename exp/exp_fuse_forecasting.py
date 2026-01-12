@@ -13,7 +13,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from utils.dtw_metric import dtw, accelerated_dtw
-from tiumefuse.meta_feature import batch_extract_meta_features
+from TimeFuse.meta_feature import batch_extract_meta_features
 
 warnings.filterwarnings("ignore")
 
@@ -23,12 +23,48 @@ from torch.utils.data import DataLoader
 class Exp_Fuse_Forecasting(Exp_Basic):
     def __init__(self, args):
         super(Exp_Fuse_Forecasting, self).__init__(args)
-
+        
     def _build_model(self):
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        if 'Gym' not in self.args.model:
+            model = self.model_dict[self.args.model].Model(self.args).float()
+            self.save_suffix = ''
+        else:
+            model_name, gym_x_mark, gym_series_sampling, gym_series_norm, gym_series_decomp, \
+            gym_channel_independent, gym_input_embed, gym_network_architecture, gym_attn, gym_feature_attn, \
+            gym_encoder_only, gym_frozen, gym_rag = self.args.model.split('_')
+            model_name = 'TSGym'
+            model = self.model_dict[model_name].Model(self.args,
+                                                      gym_x_mark=gym_x_mark,
+                                                      gym_series_sampling=gym_series_sampling,
+                                                      gym_series_norm=gym_series_norm,
+                                                      gym_series_decomp=gym_series_decomp,
+                                                      gym_channel_independent=gym_channel_independent,
+                                                      gym_input_embed=gym_input_embed,
+                                                      gym_network_architecture=gym_network_architecture,
+                                                      gym_attn=gym_attn,
+                                                      gym_feature_attn=gym_feature_attn,
+                                                      gym_encoder_only=gym_encoder_only,
+                                                      gym_frozen=gym_frozen,
+                                                      gym_rag=gym_rag).float()
+            self.save_suffix = 'Gym'
 
         if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=self.args.device_ids)
+            model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
+
+        if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
+            self.args.use_rag = True
+            train_data, _ = self._get_data(flag='train')
+            vali_data, _ = self._get_data(flag='val')
+            test_data, _ = self._get_data(flag='test')
+            
+            if 'traffic' in self.args.data_path or 'electricity' in self.args.data_path:
+                # Move data to CPU to save GPU memory during retrieval preparation
+                for data in [train_data, vali_data, test_data]:
+                    if hasattr(data, 'data_x') and data.data_x is not None: data.data_x = data.data_x.cpu()
+                    if hasattr(data, 'data_y') and data.data_y is not None: data.data_y = data.data_y.cpu()
+                    if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
+
+            model.prepare_dataset(train_data, vali_data, test_data)
         return model
 
     def _get_data(
@@ -46,65 +82,6 @@ class Exp_Fuse_Forecasting(Exp_Basic):
         criterion = nn.MSELoss()
         return criterion
 
-    def vali(self, vali_data, vali_loader, criterion):
-        total_loss = []
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(
-                vali_loader
-            ):
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float().to(self.device)
-
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                if "PEMS" == self.args.data or "Solar" == self.args.data:
-                    batch_x_mark = None
-                    batch_y_mark = None
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len :, :]).float()
-                dec_inp = (
-                    torch.cat([batch_y[:, : self.args.label_len, :], dec_inp], dim=1)
-                    .float()
-                    .to(self.device)
-                )
-                # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        outputs = self.model(
-                            batch_x, batch_x_mark, dec_inp, batch_y_mark
-                        )
-                else:
-                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                f_dim = -1 if self.args.features == "MS" else 0
-                outputs = outputs[:, -self.args.pred_len :, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
-
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
-
-                if self.args.data == "PEMS":
-                    B, T, C = pred.shape
-                    pred = pred.cpu().numpy()
-                    true = true.cpu().numpy()
-                    pred = vali_data.inverse_transform(pred.reshape(-1, C)).reshape(
-                        B, T, C
-                    )
-                    true = vali_data.inverse_transform(true.reshape(-1, C)).reshape(
-                        B, T, C
-                    )
-                    mae, mse, rmse, mape, mspe = metric(pred, true)
-                    total_loss.append(mae / 100)
-                else:
-                    loss = criterion(pred, true)
-                    total_loss.append(loss.item())
-
-        total_loss = np.average(total_loss)
-        self.model.train()
-        return total_loss
-
     def train(
         self,
         setting,
@@ -118,12 +95,13 @@ class Exp_Fuse_Forecasting(Exp_Basic):
         vali_data, vali_loader = self._get_data(flag="val")
         test_data, test_loader = self._get_data(flag="test")
 
-        path = os.path.join(self.args.checkpoints, setting)
+        path = os.path.join(f'{self.args.checkpoints}{self.save_suffix}/', setting)
         if not os.path.exists(path):
             os.makedirs(path)
 
-        # check if the model is already trained
-        if os.path.exists(path + "/" + "checkpoint.pth"):
+        best_model_path1 = path + '/' + f'checkpoint.pth'
+        best_model_path2 = path + '/' + f'{self.args.data_path.replace(".csv","")}_checkpoint.pth'
+        if os.path.exists(best_model_path2):
             if override_saved_model:
                 print(f"[Base Model Train] Overriding saved model at {path}")
             else:
@@ -133,11 +111,28 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                 )
                 self.model.load_state_dict(
                     torch.load(
-                        os.path.join(path, "checkpoint.pth"),
+                        best_model_path2,
                         map_location=self.device,
                     )
                 )
                 return self.model, 0, 0
+        else:
+            if os.path.exists(best_model_path1):
+                if override_saved_model:
+                    print(f"[Base Model Train] Overriding saved model at {path}")
+                else:
+                    print(
+                        f"[Base Model Train] Model already trained, loading from {path} | "
+                        f"Set override_saved_model=True to train and override."
+                    )
+                    self.model.load_state_dict(
+                        torch.load(
+                            best_model_path1,
+                            map_location=self.device,
+                        )
+                    )
+                    return self.model, 0, 0
+        raise NotImplementedError("Training from scratch is not supported for Fuse Forecasting.")
 
         time_now = time.time()
 
@@ -321,45 +316,12 @@ class Exp_Fuse_Forecasting(Exp_Basic):
 
         return self.model, vali_loss, test_loss
 
-    def test(
-        self,
-        setting,
-        split_name="test",
-        load_saved_model=False,
-        verbose=False,
-        inv_transform=True,
-        num_batchs=None,
-    ):
-
-        test_data, test_loader = self._get_data(
-            flag=split_name,
-        )
-
-        if load_saved_model:
-            if verbose:
-                print(f"loading saved model from {setting}")
-            self.model.load_state_dict(
-                torch.load(
-                    os.path.join(
-                        "./checkpoints/" + setting,
-                        "checkpoint.pth",
-                    ),
-                    map_location=self.device,
-                )
-            )
-
-        preds = []
-        trues = []
-        # folder_path = "./test_results/" + setting + "/"
-        # if not os.path.exists(folder_path):
-        #     os.makedirs(folder_path)
-
+    def vali(self, vali_data, vali_loader, criterion):
+        total_loss = []
         self.model.eval()
-
-        batch_times = []
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(
-                test_loader
+                vali_loader
             ):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
@@ -371,7 +333,6 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                     batch_x_mark = None
                     batch_y_mark = None
 
-                start_time = time.time()
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len :, :]).float()
                 dec_inp = (
@@ -387,22 +348,120 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                         )
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                batch_times.append(time.time() - start_time)
-
                 f_dim = -1 if self.args.features == "MS" else 0
-                outputs = outputs[:, -self.args.pred_len :, :]
-                batch_y = batch_y[:, -self.args.pred_len :, :].to(self.device)
+                outputs = outputs[:, -self.args.pred_len :, f_dim:]
+                batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
+
+                pred = outputs.detach().cpu()
+                true = batch_y.detach().cpu()
+
+                if self.args.data == "PEMS":
+                    B, T, C = pred.shape
+                    pred = pred.cpu().numpy()
+                    true = true.cpu().numpy()
+                    pred = vali_data.inverse_transform(pred.reshape(-1, C)).reshape(
+                        B, T, C
+                    )
+                    true = vali_data.inverse_transform(true.reshape(-1, C)).reshape(
+                        B, T, C
+                    )
+                    mae, mse, rmse, mape, mspe = metric(pred, true)
+                    total_loss.append(mae / 100)
+                else:
+                    loss = criterion(pred, true)
+                    total_loss.append(loss.item())
+
+        total_loss = np.average(total_loss)
+        self.model.train()
+        return total_loss
+
+    def test(
+        self,
+        setting,
+        split_name="test",
+        load_saved_model=False,
+        verbose=False,
+        inv_transform=True,
+        num_batchs=None,
+    ):
+        test_data, test_loader = self._get_data(
+            flag=split_name,
+        )
+
+        if load_saved_model:
+            if verbose:
+                print(f"loading saved model from {setting}")
+            try:    
+                self.model.load_state_dict(
+                    torch.load(
+                        os.path.join(
+                            "./checkpoints/" + setting,
+                            f'{self.args.data_path.replace(".csv","")}_checkpoint.pth',
+                        ),
+                        map_location=self.device,
+                    )
+                )
+            except FileNotFoundError:
+                self.model.load_state_dict(
+                    torch.load(
+                        os.path.join(
+                            "./checkpoints/" + setting,
+                            "checkpoint.pth",
+                        ),
+                        map_location=self.device,
+                    )
+                )
+                print("Loaded checkpoint.pth instead of dataset specific checkpoint.")
+
+        preds = []
+        trues = []
+        # folder_path = "./test_results/" + setting + "/"
+        # if not os.path.exists(folder_path):
+        #     os.makedirs(folder_path)
+
+        self.model.eval()
+
+        with torch.no_grad():
+            for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
+                batch_x, batch_y, batch_x_mark, batch_y_mark = batch_data[0], batch_data[1], batch_data[2], batch_data[3]
+                rag_raw_data = None
+                if getattr(self.args, 'use_rag', False):
+                    index = batch_data[4].to(self.device)
+                    if self.args.model != 'RAFT':
+                        with torch.no_grad(): # 通常检索过程不需要梯度传导回数据库
+                            rag_raw_data = self.model.fetch_batch(index, mode='test')
+                # decoder input
+                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float().to(self.device)
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
+                # encoder - decoder
+                if self.args.use_amp:
+                    with torch.cuda.amp.autocast():
+                        if self.args.model == 'RAFT':
+                            outputs = self.model(batch_x, index, mode='test')
+                        elif getattr(self.args, 'use_rag', False):
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    if self.args.model == 'RAFT':
+                        outputs = self.model(batch_x, index, mode='test')
+                    elif getattr(self.args, 'use_rag', False):
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, rag_raw_data=rag_raw_data)
+                    else:
+                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+
+                f_dim = -1 if self.args.features == 'MS' else 0
+                outputs = outputs[:, -self.args.pred_len:, :]
+                batch_y = batch_y[:, -self.args.pred_len:, :]
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
                 if test_data.scale and self.args.inverse:
-                    shape = outputs.shape
-                    outputs = test_data.inverse_transform(
-                        outputs.reshape(shape[0] * shape[1], -1)
-                    ).reshape(shape)
-                    batch_y = test_data.inverse_transform(
-                        batch_y.reshape(shape[0] * shape[1], -1)
-                    ).reshape(shape)
-
+                    shape = batch_y.shape
+                    if self.args.features == 'MS':
+                        outputs = np.tile(outputs, [1, 1, batch_y.shape[-1]])
+                    outputs = test_data.inverse_transform(outputs.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                    batch_y = test_data.inverse_transform(batch_y.reshape(shape[0] * shape[1], -1)).reshape(shape)
+        
                 outputs = outputs[:, :, f_dim:]
                 batch_y = batch_y[:, :, f_dim:]
 
@@ -412,62 +471,77 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                 preds.append(pred)
                 trues.append(true)
                 if i % 20 == 0:
-                    if verbose:
-                        input = batch_x.detach().cpu().numpy()
-                        if test_data.scale and self.args.inverse:
-                            shape = input.shape
-                            input = test_data.inverse_transform(
-                                input.reshape(shape[0] * shape[1], -1)
-                            ).reshape(shape)
-                        gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
-                        pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                        # visual(gt, pd, os.path.join(folder_path, str(i) + ".pdf"))
-
-                if num_batchs is not None and i >= num_batchs:
-                    break
-
-            # print(f"Time for each batch: {np.mean(batch_times)*1000:.4f}ms")
+                    input = batch_x.detach().cpu().numpy()
+                    if test_data.scale and self.args.inverse:
+                        shape = input.shape
+                        input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                    gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
+                    pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
+                    # visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
 
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
-        if verbose:
-            print("test shape:", preds.shape, trues.shape)
+        print(f'test shape:{preds.shape} {trues.shape}')
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        if verbose:
-            print("test shape:", preds.shape, trues.shape)
+        print(f'test shape:{preds.shape} {trues.shape}')
+        
+        # result save path construction
+        dataset = self.args.model_id.split('_')[0]
+        if 'TSGym' in setting:
+            if 'Transformer' in setting:
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_transformer/{dataset}/' + setting + '/'
+            elif 'LLM' in setting:
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_LLM/{dataset}/' + setting + '/'
+            elif 'TSFM' in setting:
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_TSFM/{dataset}/' + setting + '/'
+            elif 'MLP' in setting:
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_MLP/{dataset}/' + setting + '/'
+            elif 'GRU' in setting:
+                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_GRU/{dataset}/' + setting + '/'
+        else:
+            folder_path = f'./results_long_term_forecasting/results{self.save_suffix}/{dataset}/' + setting + '/'
 
-        if self.args.data == "PEMS" and inv_transform:
-            B, T, C = preds.shape
-            preds = test_data.inverse_transform(preds.reshape(-1, C)).reshape(B, T, C)
-            trues = test_data.inverse_transform(trues.reshape(-1, C)).reshape(B, T, C)
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
 
-        # # result save
-        # folder_path = "./results/" + setting + "/"
-        # if not os.path.exists(folder_path):
-        #     os.makedirs(folder_path)
+        stored_metrics = None
+        if os.path.exists(folder_path + 'metrics.npy') and split_name == 'test':
+            stored_metrics = np.load(folder_path + 'metrics.npy')
 
         # dtw calculation
         if self.args.use_dtw:
             dtw_list = []
             manhattan_distance = lambda x, y: np.abs(x - y)
             for i in range(preds.shape[0]):
-                x = preds[i].reshape(-1, 1)
-                y = trues[i].reshape(-1, 1)
+                x = preds[i].reshape(-1,1)
+                y = trues[i].reshape(-1,1)
                 if i % 100 == 0:
-                    print("calculating dtw iter:", i)
+                    print(f"calculating dtw iter:{i}")
                 d, _, _, _ = accelerated_dtw(x, y, dist=manhattan_distance)
                 dtw_list.append(d)
             dtw = np.array(dtw_list).mean()
         else:
-            dtw = "not calculated"
+            dtw = 'not calculated'
 
         mae, mse, rmse, mape, mspe = metric(preds, trues)
-        if verbose:
-            print("::exp.test:: mse:{}, mae:{}, dtw:{}".format(mse, mae, dtw))
+        print(f"mse:{mse}, mae:{mae}, mape:{mape}, dtw:{dtw}")
 
-        if num_batchs is not None:
-            return preds, trues, mae, mse, rmse, mape, mspe, np.mean(batch_times)
+        if stored_metrics is not None and split_name == 'test':
+             emae, emse, ermse, emape, emspe = stored_metrics[0], stored_metrics[1], stored_metrics[2], stored_metrics[3], stored_metrics[4]
+             print("Checking consistency with existing metrics (TEST set):")
+             print(f"Existing: mae={emae:.5f}, mse={emse:.5f}")
+             print(f"New:      mae={mae:.5f}, mse={mse:.5f}")
+             if np.isclose(mae, emae, atol=1e-5) and np.isclose(mse, emse, atol=1e-5):
+                 print("metrics match!")
+             else:
+                 print("metrics DO NOT match!")
+        elif stored_metrics is not None:
+            print(f"Skipping metric consistency check because split_name is '{split_name}' (not 'test'), but loaded metrics are likely from 'test'.")
+
+        # np.save(folder_path + f'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
+        # np.save(folder_path + f'pred.npy', preds)
+        # np.save(folder_path + f'true.npy', trues)
 
         return preds, trues, mae, mse, rmse, mape, mspe
 
@@ -482,11 +556,12 @@ class Exp_Fuse_Forecasting(Exp_Basic):
 
         all_x_meta = []
         with torch.no_grad():
-            for i, (batch_x, _, _, _) in tqdm.tqdm(
+            for i, batch_data in tqdm.tqdm(
                 enumerate(test_loader),
                 total=len(test_loader),
-                desc=f"{self.args.data_name} - Extracting {split_name} meta-features",
+                desc=f"{self.args.data_path} - Extracting {split_name} meta-features",
             ):
+                batch_x = batch_data[0]  # (B, L, D)
                 all_x_meta.append(batch_extract_meta_features(batch_x))
         all_x_meta = pd.concat(all_x_meta).reset_index(drop=True)
 

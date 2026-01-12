@@ -9,7 +9,7 @@ from statsmodels.tsa.ar_model import AutoReg
 
 def batch_extract_meta_features(batch_x):
     try:
-        batch_x = batch_x.numpy()
+        batch_x = batch_x.cpu().numpy()
     except AttributeError:
         pass
 

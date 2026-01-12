@@ -18,14 +18,17 @@
       "Nonstationary_Transformer",
       "LightTS",
       "Informer",
-      "Autoformer"
+      "Autoformer",
+      "TimeMixer"
     ],
     "forecast_settings": [
-      [96, 48, 96]
+      [96, 48, 96],
+            [96, 48, 192],
+            [96, 48, 336],
+            [96, 48, 720]
     ],
     "override_args": {
         "use_gpu": true,
         "gpu": 0
     }
   }
-  

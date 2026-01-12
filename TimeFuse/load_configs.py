@@ -6,7 +6,7 @@ import tempfile
 import importlib.util
 from copy import copy
 import numpy as np
-from args import get_parser
+from run import get_parser
 from pathlib import Path
 import json
 
@@ -249,7 +249,7 @@ def load_config_from_shell(shell_path):
 
 
 def get_config_path(
-    dataname, model, base_path="/data/nishome/user1/chaochuan/TSGym_benchmark/scripts/long_term_forecast/", verbose=False
+    dataname, model, base_path="scripts/long_term_forecast/", verbose=False
 ):
 
     if dataname.startswith("ETT"):
@@ -267,7 +267,7 @@ def get_config_path(
             print(f"Loading TSLib config from {config_path}")
         return config_path
     else:
-        raise FileNotFoundError(f"Config path not found: {config_path}")
+        return None
         # # fallback to local scripts if not found in custom path
         # local_base_path = "./scripts/long_term_forecast/"
         # if dataname.startswith("ETT"):
@@ -458,32 +458,6 @@ def get_forecast_exp_args(
     run_sota_path=None,
     verbose=False,
 ):
-    # 1. Try to load from run_sota.py script instructions FIRST if provided
-    if run_sota_path:
-        sota_args = get_args_from_run_sota_script(
-            dataname, modelname, seq_len, pred_len, run_sota_path, verbose=verbose
-        )
-        if sota_args:
-            if verbose:
-                print(
-                    f"Loaded configuration from run_sota.py for {modelname}-{dataname}"
-                )
-
-            # Apply necessary overrides logic that TimeFuse expects
-            sota_args.data_name = dataname
-            if dataname in data_configs:
-                if not hasattr(sota_args, "n_dim"):
-                    sota_args.n_dim = data_configs[dataname]["n_dim"]
-                if not hasattr(sota_args, "root_path"):
-                    sota_args.root_path = data_configs[dataname]["root_path"]
-
-            sota_args.model_id = f"{dataname}_{seq_len}_{pred_len}"
-            # Ensure training epoch is set (TimeFuse default is 10)
-            if not hasattr(sota_args, "train_epochs"):
-                sota_args.train_epochs = 10
-
-            return sota_args
-
     has_config = False
     try:
         # check if the config file exists
@@ -500,58 +474,85 @@ def get_forecast_exp_args(
 
     if has_config:
         # load args from the training script
-        args = get_parser().parse_args(command.split())
-        args.data_name = dataname
-        args.n_dim = data_configs[dataname]["n_dim"]
-        args.root_path = data_configs[dataname]["root_path"]
-        args.model_id = f"{dataname}_{seq_len}_{pred_len}"
-        args.train_epochs = 10
+        args = get_parser().parse_args(shlex.split(command))
+        # args.data_name = dataname
+        # args.n_dim = data_configs[dataname]["n_dim"]
+        # args.root_path = data_configs[dataname]["root_path"]
+        # args.model_id = f"{dataname}_{seq_len}_{pred_len}"
+        # args.train_epochs = 10
         return args
     else:
         # args are not in the config file, try to load from run_sota logic
         # New Feature: Fallback to run_sota.py logic for d_model/d_ff
         
-        args = copy(default_args)
-        args.seq_len = seq_len
-        args.label_len = label_len
-        args.pred_len = pred_len
+        # 1. Try to load from run_sota.py script instructions FIRST if provided
+        if run_sota_path:
+            sota_args = get_args_from_run_sota_script(
+                dataname, modelname, seq_len, pred_len, run_sota_path, verbose=verbose
+            )
+            if sota_args:
+                if verbose:
+                    print(
+                        f"Loaded configuration from run_sota.py for {modelname}-{dataname}"
+                    )
 
-        args.data_name = dataname
-        args.model = modelname
-        for config in data_configs[dataname]:
-            setattr(args, config, data_configs[dataname][config])
-        args.enc_in = data_configs[dataname]["n_dim"]
-        args.dec_in = data_configs[dataname]["n_dim"]
+                # Apply necessary overrides logic that TimeFuse expects
+                sota_args.data_name = dataname
+                if dataname in data_configs:
+                    if not hasattr(sota_args, "n_dim"):
+                        sota_args.n_dim = data_configs[dataname]["n_dim"]
+                    if not hasattr(sota_args, "root_path"):
+                        sota_args.root_path = data_configs[dataname]["root_path"]
 
-        if "c_out" in data_configs[dataname].keys() and not modelname in [
-            "TimeMixer",
-        ]:
-            args.c_out = data_configs[dataname]["c_out"]
+                sota_args.model_id = f"{dataname}_{seq_len}_{pred_len}"
+                # Ensure training epoch is set (TimeFuse default is 10)
+                if not hasattr(sota_args, "train_epochs"):
+                    sota_args.train_epochs = 10
+
+                return sota_args
         else:
-            args.c_out = data_configs[dataname]["n_dim"]
+            raise ValueError(f"No config found for {dataname} {modelname} with seq_len={seq_len}, pred_len={pred_len}, and no run_sota_path provided.")
+        # args = copy(default_args)
+        # args.seq_len = seq_len
+        # args.label_len = label_len
+        # args.pred_len = pred_len
 
-        # Try to get params from run_sota simulation
-        try:
-            sota_d_model, sota_d_ff = get_model_params_from_run_sota(modelname, dataname, pred_len)
-            args.d_model = sota_d_model
-            args.d_ff = sota_d_ff
-            # print(f"DEBUG: Using run_sota params for {modelname} on {dataname}: d_model={sota_d_model}, d_ff={sota_d_ff}")
-        except Exception as e:
-            # If logic fails, fallback to original inferred dim
-            # print(f"DEBUG: run_sota param extraction failed: {e}")
-            inferred_d_model = get_model_dim(args)
-            if "d_model" in data_configs[dataname].keys():
-                args.d_model = data_configs[dataname]["d_model"]
-            else:
-                args.d_model = inferred_d_model
-            if "d_ff" in data_configs[dataname].keys():
-                args.d_ff = data_configs[dataname]["d_ff"]
-            else:
-                args.d_ff = inferred_d_model
+        # args.data_name = dataname
+        # args.model = modelname
+        # for config in data_configs[dataname]:
+        #     setattr(args, config, data_configs[dataname][config])
+        # args.enc_in = data_configs[dataname]["n_dim"]
+        # args.dec_in = data_configs[dataname]["n_dim"]
 
-        args.model_id = f"{dataname}_{seq_len}_{pred_len}"
-        args.train_epochs = 10
-        return args
+        # if "c_out" in data_configs[dataname].keys() and not modelname in [
+        #     "TimeMixer",
+        # ]:
+        #     args.c_out = data_configs[dataname]["c_out"]
+        # else:
+        #     args.c_out = data_configs[dataname]["n_dim"]
+
+        # # Try to get params from run_sota simulation
+        # try:
+        #     sota_d_model, sota_d_ff = get_model_params_from_run_sota(modelname, dataname, pred_len)
+        #     args.d_model = sota_d_model
+        #     args.d_ff = sota_d_ff
+        #     # print(f"DEBUG: Using run_sota params for {modelname} on {dataname}: d_model={sota_d_model}, d_ff={sota_d_ff}")
+        # except Exception as e:
+        #     # If logic fails, fallback to original inferred dim
+        #     # print(f"DEBUG: run_sota param extraction failed: {e}")
+        #     inferred_d_model = get_model_dim(args)
+        #     if "d_model" in data_configs[dataname].keys():
+        #         args.d_model = data_configs[dataname]["d_model"]
+        #     else:
+        #         args.d_model = inferred_d_model
+        #     if "d_ff" in data_configs[dataname].keys():
+        #         args.d_ff = data_configs[dataname]["d_ff"]
+        #     else:
+        #         args.d_ff = inferred_d_model
+
+        # args.model_id = f"{dataname}_{seq_len}_{pred_len}"
+        # args.train_epochs = 10
+        # return args
 
 
 def get_dataset_forecast_settings(dataset):
@@ -632,15 +633,20 @@ def get_all_exp_args(
                     default_args=default_args,
                     verbose=verbose,
                 )
-                for k, v in override_args.items():
-                    setattr(args, k, v)
+                if args is None:
+                    if verbose:
+                        print(f"Warning: No config found for {dataset} {model} {forecast_setting}, skipping...")
+                    continue
 
-                # special rules
-                if args.model == "TimeMixer":
-                    args.label_len = 0  # TimeMixer does not use label_len
-                if args.model == "Nonstationary_Transformer":
-                    # for numrical stability
-                    args.learning_rate = max(args.learning_rate, 0.001)
+                # for k, v in override_args.items():
+                #     setattr(args, k, v)
+
+                # # special rules
+                # if args.model == "TimeMixer":
+                #     args.label_len = 0  # TimeMixer does not use label_len
+                # if args.model == "Nonstationary_Transformer":
+                #     # for numrical stability
+                #     args.learning_rate = max(args.learning_rate, 0.001)
 
                 all_args[key] = args
 

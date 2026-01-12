@@ -27,7 +27,6 @@ python run.py \
     --freq 0 \
     --patch_size 24 \
     --stride 2 \
-    --all 1 \
     --gpt_layer 6 \
     --itr 3 \
     --model $model \

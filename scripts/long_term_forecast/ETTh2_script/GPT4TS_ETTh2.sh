@@ -30,7 +30,6 @@ python run.py \
     --llm_layers 6 \
     --itr 1 \
     --model $model \
-    --tmax 20 \
     --pretrain 1 \
     --is_gpt 1
 

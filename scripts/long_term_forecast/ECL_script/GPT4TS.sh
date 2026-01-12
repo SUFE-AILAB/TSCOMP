@@ -30,6 +30,5 @@ python run.py \
     --llm_layers 6 \
     --itr 1 \
     --model $model \
-    --tmax 10 \
     --is_gpt 1
 done

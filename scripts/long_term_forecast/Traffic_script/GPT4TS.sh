@@ -22,12 +22,10 @@ python run.py \
     --d_ff 768 \
     --patch_len 16 \
     --stride 8 \
-    --all 1 \
     --llm_layers 6 \
     --itr 1 \
     --model $model \
     --patience 3 \
-    --tmax 10 \
     --is_gpt 1
 
 done

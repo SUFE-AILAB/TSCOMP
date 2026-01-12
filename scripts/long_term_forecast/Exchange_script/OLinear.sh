@@ -21,6 +21,7 @@ do
     pred_len=${pred_lens[i]}
 
     python -u run.py \
+          --task_name long_term_forecast \
       --is_training 1 \
       --root_path ./dataset/exchange_rate/ \
       --data_path exchange_rate.csv \

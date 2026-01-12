@@ -275,27 +275,27 @@ if __name__ == '__main__':
             gym_type='GRU'
         dataset = args.model_id.split('_')[0]
         folder_pathGym = f'./results_{args.task_name}ing/resultsGym_{gym_type}/{dataset}/{setting}/'
-        if os.path.exists(folder_pathGym):
-            print(f'Warning: The resultsGym folder {folder_pathGym} already exists! The experiment may be repeated!')
-            sys.exit(0)
         if args.task_name == 'short_term_forecast':
             folder_path1 = folder_pathGym + args.seasonal_patterns + '_forecast.csv'
             folder_path2 = folder_pathGym + 'metrics.npz'
             if os.path.exists(folder_path1) or os.path.exists(folder_path2):
-                print(f'Warning: The resultsGym folder {folder_path1} already exists! The experiment may be repeated!')
+                print(f'Warning: The short resultsGym folder {folder_path1} already exists! The experiment may be repeated!')
                 sys.exit(0)
+        elif os.path.exists(folder_pathGym):
+            print(f'Warning: The resultsGym folder {folder_pathGym} already exists! The experiment may be repeated!')
+            sys.exit(0)
     else:
         dataset = args.model_id.split('_')[0]
         folder_path = f'./results_{args.task_name}ing/results/{dataset}/{setting}/'
-        if os.path.exists(folder_path):
-            print(f'Warning: The results folder {folder_path} already exists! The experiment may be repeated!')
-            sys.exit(0)
         if args.task_name == 'short_term_forecast':
             folder_path1 = folder_path + args.seasonal_patterns + '_forecast.csv'
             folder_path2 = folder_path + 'metrics.npz'
             if os.path.exists(folder_path1) or os.path.exists(folder_path2):
-                print(f'Warning: The resultsGym folder {folder_path1} already exists! The experiment may be repeated!')
+                print(f'Warning: The short results folder {folder_path1} already exists! The experiment may be repeated!')
                 sys.exit(0)
+        elif os.path.exists(folder_path):
+            print(f'Warning: The results folder {folder_path} already exists! The experiment may be repeated!')
+            sys.exit(0)
 
     print(torch.cuda.is_available())
 

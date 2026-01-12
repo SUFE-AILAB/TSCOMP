@@ -139,7 +139,7 @@ class Model(nn.Module):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
             dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)  # [B,pred_len,C]
             dec_out = torch.cat([torch.zeros_like(x_enc), dec_out], dim=1)
-            return dec_out  # [B, T, D]
+            return dec_out[:, -self.pred_len:, :]  # [B, T, D]
         return None
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):

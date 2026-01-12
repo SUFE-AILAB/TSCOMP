@@ -5,7 +5,7 @@ model_name=ETSformer
 python3 -u run.py \
   --task_name short_term_forecast \
   --is_training 1 \
-  --root_path ../dataset/m4 \
+  --root_path ./dataset/m4 \
   --seasonal_patterns 'Monthly' \
   --model_id m4_Monthly \
   --model $model_name \

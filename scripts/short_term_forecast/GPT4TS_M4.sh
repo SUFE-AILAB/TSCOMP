@@ -14,7 +14,7 @@ python -u run.py \
   --c_out 1 \
   --llm_layers 6 \
   --d_ff 128 \
-  --d_model 128 \
+  --d_model 768 \
   --patch_len 1 \
   --stride 1 \
   --batch_size 16 \

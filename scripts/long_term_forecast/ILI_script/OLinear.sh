@@ -19,7 +19,7 @@ do
 
 
     python -u run.py \
-          --task_name long_term_forecast \
+      --task_name long_term_forecast \
       --is_training 1 \
       --root_path ./dataset/ILI/ \
       --data_path national_illness.csv \

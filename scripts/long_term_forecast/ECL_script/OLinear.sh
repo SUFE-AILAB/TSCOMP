@@ -40,7 +40,7 @@ do
       --train_epochs ${epochs[i]} \
       --patience 5 \
       --lradj ${lradj[i]} \
-      --loss L1 \
+      --loss WeightedL1 \
       --dropout 0.0 
 
 done

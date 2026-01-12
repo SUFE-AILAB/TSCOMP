@@ -51,7 +51,7 @@ python3 -u run.py \
   --data_path nyse.csv \
   --model_id nyse_36_48 \
   --model $model_name \
-  --data ETTh1 \
+  --data custom \
   --features M \
   --seq_len 36 \
   --label_len 18 \

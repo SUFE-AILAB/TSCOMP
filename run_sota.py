@@ -134,11 +134,11 @@ def create_task_list(param_devices, env, dataset):
                 if model_name in trained_model[data_model_id]:
                     is_trained = True
             
-            if is_trained:
+            if is_trained and model_name != 'Koopa':
                 # print(f"Skipping trained model: {model_name} on {data_model_id}") # 可选：打印跳过信息
                 continue
 
-            print(model_name, data_model_id)
+            # print(model_name, data_model_id)
                 
             # 不同数据对应不同的data，以及不同的root_path、data_path
             if 'ETT' in data_name:
@@ -248,6 +248,10 @@ def create_task_list(param_devices, env, dataset):
                 pred_len_list = [96, 192, 336, 720] # 96, 192, 336, 720
                 ili_pred_len_list = [24, 36, 48, 60] # 24, 36, 48, 60
                 for ii, pred_len in enumerate(pred_len_list):
+                    # Koopa 补充 336, 720
+                    if is_trained and model_name == 'Koopa':
+                        if pred_len in [96, 192]:
+                            continue
                     if data_model_id == 'ECL' and model_name == 'TemporalFusionTransformer' and pred_len ==720:
                         d_model, d_ff = 64, 64
                     if data_model_id == 'traffic' and model_name == 'TiDE' and pred_len in [192,336]:
@@ -291,6 +295,8 @@ def create_task_list(param_devices, env, dataset):
                         elif model_name == 'RAFT':
                             seq_len = 96
                             learning_rate=0.01
+                        elif model_name == 'TimeMixer':
+                            label_len = 0
                             
                         # TimeMixer 由于seq_len=36最多能被2除2次
                         down_sampling_layers = 1

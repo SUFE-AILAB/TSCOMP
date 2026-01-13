@@ -23,8 +23,8 @@ do
       --is_training 1 \
       --root_path ./dataset/ILI/ \
       --data_path national_illness.csv \
-      --q_mat_dir ILI_${seq_len}_ratio0.70.npy \
-      --q_out_mat_dir ILI_${pred_len}_ratio0.70.npy \
+      --q_mat_dir ILI_${seq_len}_ratio0.7.npy \
+      --q_out_mat_dir ILI_${pred_len}_ratio0.7.npy \
       --model_id ILI_OLinear_${seq_len}_${pred_len} \
       --model $model_name \
       --data custom \

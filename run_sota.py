@@ -116,7 +116,7 @@ def create_task_list(param_devices, env, dataset):
                         'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
                         'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
                         'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
-        model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear', ]
+        model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear', 'CrossCrossModel']
         # model_list += ['Timer', 'TimeLLM', 'Moment', 'TimeBridge']
     elif env =='mamba':
          # 在虚拟环境mamba中运行
@@ -189,7 +189,7 @@ def create_task_list(param_devices, env, dataset):
 
             if 'M4' in data_name:
                 # short-term
-                if model_name == 'Koopa' or  model_name == 'TemporalFusionTransformer' or model_name == 'DUET':
+                if model_name == 'Koopa' or  model_name == 'TemporalFusionTransformer':
                     # Koopa没有短期预测
                     # 短期预测没输入mask时间信息，没办法用TemporalFusionTransformer
                     continue

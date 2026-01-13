@@ -4,11 +4,11 @@ import os
 import re
 
 # 找到SOTA的结果
-BASELINE_LIST = ['RAFT', 'GPT4TS']
+BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear', 'CrossCrossModel']
 BASELINE_LIST += ['DUET','TimeMixer','MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','Autoformer','SegRNN','Mamba', 'iTransformer', 'TimeXer', 
                       'PAttn', 'Koopa','TSMixer', 'FreTS',  'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS', 'Informer', 'Transformer', 'Reformer']
 BASELINE_LIST +=  ['FiLM','TiDE']#, 'TemporalFusionTransformer'
-# BASELINE_LIST += ['FreDF', 'OLinear', 'Timer', 'TimeLLM', 'Moment', 'TimeBridge']
+# BASELINE_LIST += ['FreDF', 'Timer', 'TimeLLM', 'Moment', 'TimeBridge']
 DATASETS_LIST = ['ETTm1','ETTm2','ETTh1','ETTh2','ECL','traffic','weather','Exchange','ili', 'nyse', 'nasdaq']
 
 # sota performance

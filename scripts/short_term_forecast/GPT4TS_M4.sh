@@ -36,7 +36,6 @@ python -u run.py \
   --enc_in 1 \
   --dec_in 1 \
   --c_out 1 \
-  --ln 1 \
   --llm_layers 6 \
   --d_model 768 \
   --d_ff 32 \

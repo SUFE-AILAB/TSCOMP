@@ -12,7 +12,7 @@ python run.py \
     --is_training 1 \
     --root_path ./dataset/illness/ \
     --data_path national_illness.csv \
-    --model_id illness_$model'_'$seq_len'_'$pred_len \
+    --model_id ili_$model'_'$seq_len'_'$pred_len \
     --data custom \
     --seq_len $seq_len \
     --label_len 18 \
@@ -23,7 +23,6 @@ python run.py \
     --d_model 768 \
     --n_heads 4 \
     --d_ff 768 \
-    --freq 0 \
     --stride 2 \
     --itr 3 \
     --model $model \

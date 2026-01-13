@@ -189,7 +189,7 @@ def create_task_list(param_devices, env, dataset):
 
             if 'M4' in data_name:
                 # short-term
-                if model_name == 'Koopa' or  model_name == 'TemporalFusionTransformer':
+                if model_name == 'Koopa' or  model_name == 'TemporalFusionTransformer' or model_name == 'DUET':
                     # Koopa没有短期预测
                     # 短期预测没输入mask时间信息，没办法用TemporalFusionTransformer
                     continue
@@ -299,6 +299,8 @@ def create_task_list(param_devices, env, dataset):
                             learning_rate=0.01
                         elif model_name == 'TimeMixer' or model_name == 'OLinear':
                             label_len = 0
+                        elif model_name == 'DUET':
+                            seq_len = 104
                             
                         # TimeMixer 由于seq_len=36最多能被2除2次
                         down_sampling_layers = 1
@@ -327,6 +329,8 @@ def create_task_list(param_devices, env, dataset):
                             seq_len = 720
                         elif model_name == 'TimeMixer' or model_name == 'OLinear':
                             label_len = 0
+                        elif model_name == 'DUET':
+                            seq_len = 512
 
                         # TimeMixer 参考其它sota
                         down_sampling_layers = 3
@@ -341,12 +345,15 @@ def create_task_list(param_devices, env, dataset):
                             # 仿照已有sota设置参数，使得训练效率更高
                             batch_size=16
                             learning_rate=0.01
+                    
                     if model_name == 'OLinear':
                         q_mat_path, q_out_mat_path = get_q_mat_path(seq_len, pred_len, data_name)
                         loss = 'WeightedL1'
                     else:
                         q_mat_path, q_out_mat_path = 'q_mat.npy','q_out_mat.npy'
                         loss = 'MSE'
+                    if model_name == 'DUET':
+                        loss = 'MAE'
                     task_command = f"""CUDA_VISIBLE_DEVICES={param_devices} python3 -u run.py \
                             --task_name long_term_forecast \
                             --is_training 1 \

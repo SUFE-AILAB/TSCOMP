@@ -1,14 +1,14 @@
 model_name=DUET
-batch_size=32
+batch_size=16
 d_ff=1024
 d_model=512
 dropout=0.5
-e_layers=2
+e_layers=4
 factor=3
 fc_dropout=0
 k=2
 learning_rate=0.0005
-lradj='type3'
+lradj='type1'
 n_heads=1
 num_experts=4
 patch_len=48
@@ -19,11 +19,11 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/electricity/ \
   --data_path electricity.csv \
-  --model_id ECL_96_96 \
+  --model_id ECL_512_96 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 96 \
   --e_layers $e_layers \
@@ -63,11 +63,11 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/electricity/ \
   --data_path electricity.csv \
-  --model_id ECL_96_192 \
+  --model_id ECL_512_192 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 192 \
   --d_model $d_model \
@@ -107,11 +107,11 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/electricity/ \
   --data_path electricity.csv \
-  --model_id ECL_96_336 \
+  --model_id ECL_512_336 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 336 \
   --d_model $d_model \
@@ -151,11 +151,11 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/electricity/ \
   --data_path electricity.csv \
-  --model_id ECL_96_720 \
+  --model_id ECL_512_720 \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 720 \
   --d_model $d_model \

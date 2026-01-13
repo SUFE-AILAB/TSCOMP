@@ -16,6 +16,7 @@ num_experts=2
 patch_len=48
 patience=5
 hidden_size=256
+seq_len=104
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -26,7 +27,7 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 36 \
+  --seq_len $seq_len \
   --label_len 18 \
   --pred_len 24 \
   --e_layers $e_layers \
@@ -70,7 +71,7 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 36 \
+  --seq_len $seq_len \
   --label_len 18 \
   --pred_len 36 \
   --d_model $d_model \
@@ -114,7 +115,7 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 36 \
+  --seq_len $seq_len \
   --label_len 18 \
   --pred_len 48 \
   --d_model 128 \
@@ -158,7 +159,7 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 36 \
+  --seq_len $seq_len \
   --label_len 18 \
   --pred_len 60 \
   --d_model $d_model \

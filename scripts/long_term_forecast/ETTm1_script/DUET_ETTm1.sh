@@ -1,14 +1,14 @@
 model_name=DUET
 batch_size=32
 d_ff=512
-dropout=0.1
-e_layers=2
+dropout=0.5
+e_layers=1
 factor=3
 fc_dropout=0.2
 learning_rate=0.0005
-lradj='type3'
-n_heads=8
-num_experts=6
+lradj='type1'
+n_heads=1
+num_experts=4
 k=2
 patch_len=48
 d_model=512
@@ -19,11 +19,11 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTm1.csv \
-  --model_id ETTm1_96_96 \
+  --model_id ETTm1_512_96 \
   --model $model_name \
   --data ETTm1 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 96 \
   --e_layers $e_layers \
@@ -42,7 +42,7 @@ python3 -u run.py \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 64 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \
@@ -63,15 +63,15 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTm1.csv \
-  --model_id ETTm1_96_192 \
+  --model_id ETTm1_512_192 \
   --model $model_name \
   --data ETTm1 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 192 \
-  --d_model $d_model \
-  --d_ff $d_ff \
+  --d_model 256 \
+  --d_ff 256 \
   --hidden_size 256 \
   --n_heads $n_heads \
   --seg_len 6 \
@@ -84,7 +84,7 @@ python3 -u run.py \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 32 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \
@@ -107,11 +107,11 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTm1.csv \
-  --model_id ETTm1_96_336 \
+  --model_id ETTm1_512_336 \
   --model $model_name \
   --data ETTm1 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 336 \
   --d_model $d_model \
@@ -128,7 +128,7 @@ python3 -u run.py \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 64 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \
@@ -151,15 +151,15 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTm1.csv \
-  --model_id ETTm1_96_720 \
+  --model_id ETTm1_512_720 \
   --model $model_name \
   --data ETTm1 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 720 \
-  --d_model $d_model \
-  --d_ff $d_ff \
+  --d_model 128 \
+  --d_ff 128 \
   --hidden_size 256 \
   --n_heads $n_heads \
   --seg_len 6 \
@@ -172,7 +172,7 @@ python3 -u run.py \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 32 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \

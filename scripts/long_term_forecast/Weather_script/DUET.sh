@@ -1,15 +1,14 @@
 model_name=DUET
 batch_size=32
-d_ff=1024
-d_model=512
-dropout=0.1
+d_ff=256
+d_model=256
 e_layers=2
 factor=3
 fc_dropout=0.1
 k=2
-learning_rate=0.001
-lradj='type3'
-n_heads=8
+learning_rate=0.0005
+lradj='type1'
+n_heads=1
 num_experts=4
 patch_len=48
 patience=5
@@ -24,7 +23,7 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 96 \
   --e_layers $e_layers \
@@ -39,7 +38,7 @@ python3 -u run.py \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
+  --dropout 0.1 \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
@@ -68,11 +67,11 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 336 \
   --label_len 48 \
   --pred_len 192 \
-  --d_model $d_model \
-  --d_ff $d_ff \
+  --d_model 512 \
+  --d_ff 512 \
   --hidden_size $hidden_size \
   --n_heads $n_heads \
   --seg_len 6 \
@@ -81,11 +80,11 @@ python3 -u run.py \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
+  --dropout 0.1 \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 256 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \
@@ -112,11 +111,11 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 336 \
   --label_len 48 \
   --pred_len 336 \
-  --d_model $d_model \
-  --d_ff $d_ff \
+  --d_model 512 \
+  --d_ff 512 \
   --hidden_size $hidden_size \
   --n_heads $n_heads \
   --seg_len 6 \
@@ -125,11 +124,11 @@ python3 -u run.py \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
+  --dropout 0.1 \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 256 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \
@@ -156,11 +155,11 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len 336 \
   --label_len 48 \
   --pred_len 720 \
-  --d_model $d_model \
-  --d_ff $d_ff \
+  --d_model 512 \
+  --d_ff 512 \
   --hidden_size $hidden_size \
   --n_heads $n_heads \
   --seg_len 6 \
@@ -169,11 +168,11 @@ python3 -u run.py \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
+  --dropout 0.1 \
   --fc_dropout $fc_dropout \
   --moving_avg 25 \
   --lradj $lradj \
-  --batch_size $batch_size \
+  --batch_size 256 \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
   --loss 'MAE' \

@@ -1,19 +1,11 @@
 model_name=DUET
-batch_size=32
-d_ff=2048
-d_model=2048
-dropout=0.2
-e_layers=1
+batch_size=128
 factor=3
-fc_dropout=0
 k=3
-learning_rate=5e-05
-lradj='type3'
-n_heads=1
 num_experts=5
 patch_len=48
 patience=5
-hidden_size=128
+seq_len=96
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -24,27 +16,27 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len $seq_len \
   --label_len 48 \
   --pred_len 96 \
-  --e_layers $e_layers \
+  --e_layers 3 \
   --d_layers 1 \
-  --d_model $d_model \
-  --d_ff $d_ff \
-  --hidden_size $hidden_size \
-  --n_heads $n_heads \
+  --d_model 512 \
+  --d_ff 512 \
+  --hidden_size 128 \
+  --n_heads 4 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.2 \
+  --fc_dropout 0.05 \
   --moving_avg 25 \
-  --lradj $lradj \
+  --lradj 'type1' \
   --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 0.0001  \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -68,25 +60,27 @@ python3 -u run.py \
   --model $model_name \
   --data custom \
   --features M \
-  --seq_len 96 \
+  --seq_len $seq_len \
   --label_len 48 \
   --pred_len 192 \
-  --d_model $d_model \
-  --d_ff $d_ff \
-  --hidden_size $hidden_size \
-  --n_heads $n_heads \
+  --e_layers 1 \
+  --d_layers 1 \
+  --d_model 1024 \
+  --d_ff 2048 \
+  --hidden_size 128 \
+  --n_heads 16 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.2 \
+  --fc_dropout 0 \
   --moving_avg 25 \
-  --lradj $lradj \
+  --lradj 'type3' \
   --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 5e-05  \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -110,25 +104,27 @@ python3 -u run.py \
   --data_path exchange_rate.csv \
   --model_id Exchange_96_336 \
   --model $model_name \
-  --data custom \
-  --features M \
-  --seq_len 96 \
+  --data cus$seq_len \
   --label_len 48 \
   --pred_len 336 \
-  --d_model $d_model \
-  --d_ff $d_ff \
-  --hidden_size $hidden_size \
-  --n_heads $n_heads \
+  --e_layers 1 \
+  --d_layers 1 \
+  --d_model 2048 \
+  --d_ff 2048 \
+  --hidden_size 128 \
+  --n_heads 1 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.2 \
+  --fc_dropout 0 \
   --moving_avg 25 \
-  --lradj $lradj \
+  --lradj 'type1' \
+  --batch_size $batch_size \
+  --learning_rate 5e-05
   --batch_size $batch_size \
   --learning_rate $learning_rate  \
   --train_epochs 100 \
@@ -154,25 +150,27 @@ python3 -u run.py \
   --data_path exchange_rate.csv \
   --model_id Exchange_96_720 \
   --model $model_name \
-  --data custom \
-  --features M \
-  --seq_len 96 \
+  --data cus$seq_len \
   --label_len 48 \
   --pred_len 720 \
-  --d_model $d_model \
-  --d_ff $d_ff \
-  --hidden_size $hidden_size \
-  --n_heads $n_heads \
+  --e_layers 1 \
+  --d_layers 1 \
+  --d_model 2048 \
+  --d_ff 2048 \
+  --hidden_size 256 \
+  --n_heads 1 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.4 \
+  --fc_dropout 0.1 \
   --moving_avg 25 \
-  --lradj $lradj \
+  --lradj 'type1' \
+  --batch_size $batch_size \
+  --learning_rate 0.0001
   --batch_size $batch_size \
   --learning_rate $learning_rate  \
   --train_epochs 100 \

@@ -1,13 +1,8 @@
 model_name=DUET
 batch_size=32
 d_ff=512
-dropout=0.2
-e_layers=2
 factor=3
-fc_dropout=0.5
-learning_rate=0.0005
-lradj='type3'
-n_heads=8
+lradj='type1'
 num_experts=4
 patience=5
 k=2
@@ -19,31 +14,31 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTh2.csv \
-  --model_id ETTh2_96_96 \
+  --model_id ETTh2_512_96 \
   --model $model_name \
   --data ETTh2 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 96 \
-  --e_layers $e_layers \
+  --e_layers 1 \
   --d_layers 1 \
-  --d_model $d_model \
+  --d_model 256 \
   --d_ff $d_ff \
   --hidden_size 256 \
-  --n_heads $n_heads \
+  --n_heads 1 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.15 \
+  --fc_dropout 0.1 \
   --moving_avg 25 \
   --lradj $lradj \
   --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 0.0001  \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -63,29 +58,29 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTh2.csv \
-  --model_id ETTh2_96_192 \
+  --model_id ETTh2_512_192 \
   --model $model_name \
   --data ETTh2 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 192 \
-  --d_model $d_model \
+  --d_model 512 \
   --d_ff $d_ff \
   --hidden_size 256 \
-  --n_heads $n_heads \
+  --n_heads 1 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.15 \
+  --fc_dropout 0.1 \
   --moving_avg 25 \
   --lradj $lradj \
   --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 0.00001  \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -93,7 +88,7 @@ python3 -u run.py \
   --noisy_gating \
   --k $k \
   --CI \
-  --e_layers $e_layers \
+  --e_layers 1 \
   --d_layers 1 \
   --factor $factor \
   --enc_in 7 \
@@ -107,29 +102,29 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTh2.csv \
-  --model_id ETTh2_96_336 \
+  --model_id ETTh2_512_336 \
   --model $model_name \
   --data ETTh2 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 336 \
-  --d_model $d_model \
+  --d_model 512 \
   --d_ff $d_ff \
   --hidden_size 256 \
-  --n_heads $n_heads \
+  --n_heads 2 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.5 \
+  --fc_dropout 0.5 \
   --moving_avg 25 \
   --lradj $lradj \
   --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 0.0005  \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -137,7 +132,7 @@ python3 -u run.py \
   --noisy_gating \
   --k $k \
   --CI \
-  --e_layers $e_layers \
+  --e_layers 2 \
   --d_layers 1 \
   --factor $factor \
   --enc_in 7 \
@@ -151,29 +146,29 @@ python3 -u run.py \
   --is_training 1 \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTh2.csv \
-  --model_id ETTh2_96_720 \
+  --model_id ETTh2_512_720 \
   --model $model_name \
   --data ETTh2 \
   --features M \
-  --seq_len 96 \
+  --seq_len 512 \
   --label_len 48 \
   --pred_len 720 \
-  --d_model $d_model \
+  --d_model 512 \
   --d_ff $d_ff \
   --hidden_size 256 \
-  --n_heads $n_heads \
+  --n_heads 4 \
   --seg_len 6 \
   --win_size 2\
   --activation 'gelu' \
   --patch_len $patch_len \
   --stride 8 \
   --period_len 4 \
-  --dropout $dropout \
-  --fc_dropout $fc_dropout \
+  --dropout 0.0 \
+  --fc_dropout 0.3 \
   --moving_avg 25 \
   --lradj $lradj \
   --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 0.0005  \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -181,7 +176,7 @@ python3 -u run.py \
   --noisy_gating \
   --k $k \
   --CI \
-  --e_layers $e_layers \
+  --e_layers 1 \
   --d_layers 1 \
   --factor $factor \
   --enc_in 7 \

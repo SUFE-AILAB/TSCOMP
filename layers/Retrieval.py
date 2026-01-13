@@ -562,7 +562,8 @@ class RetrievalTool():
     
     def retrieve_cpu(self, x, index, train=True):
         bsz, seq_len, channels = x.shape
-        assert(seq_len == self.seq_len, channels == self.channels)
+        assert seq_len == self.seq_len, f"seq_len mismatch: {seq_len} vs {self.seq_len}"
+        assert channels == self.channels, f"channels mismatch: {channels} vs {self.channels}"
         
         x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
 

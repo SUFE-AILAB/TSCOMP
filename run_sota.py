@@ -138,7 +138,7 @@ def create_task_list(param_devices, env, dataset):
                 # print(f"Skipping trained model: {model_name} on {data_model_id}") # 可选：打印跳过信息
                 continue
 
-            # print(model_name, data_model_id)
+            print(model_name, data_model_id)
                 
             # 不同数据对应不同的data，以及不同的root_path、data_path
             if 'ETT' in data_name:
@@ -345,7 +345,7 @@ def create_task_list(param_devices, env, dataset):
                         q_mat_path, q_out_mat_path = get_q_mat_path(seq_len, pred_len, data_name)
                         loss = 'WeightedL1'
                     else:
-                        q_mat_path, q_out_mat_path = '',''
+                        q_mat_path, q_out_mat_path = 'q_mat.npy','q_out_mat.npy'
                         loss = 'MSE'
                     task_command = f"""CUDA_VISIBLE_DEVICES={param_devices} python3 -u run.py \
                             --task_name long_term_forecast \

@@ -3,7 +3,7 @@ export CUDA_VISIBLE_DEVICES=0
 seq_len=512
 model=GPT4TS
 
-for pred_len in 96 192 336 729
+for pred_len in 96 192 336 720
 do
 
 python run.py \

@@ -26,7 +26,7 @@ do
       --data_path nasdaq.csv \
       --q_mat_dir nasdaq_${seq_len}_ratio0.7.npy \
       --q_out_mat_dir nasdaq_${pred_len}_ratio0.7.npy \
-      --model_id Nasdaq_OLinear_${seq_len}_${pred_len} \
+      --model_id nasdaq_OLinear_${seq_len}_${pred_len} \
       --model $model_name \
       --data custom \
       --features M \

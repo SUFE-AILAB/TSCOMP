@@ -22,7 +22,7 @@ do
       --data_path traffic.csv \
       --q_mat_dir traffic_${seq_len}_ratio0.7.npy \
       --q_out_mat_dir traffic_${pred_len}_ratio0.7.npy \
-      --model_id Traffic_OLinear_${seq_len}_${pred_len} \
+      --model_id traffic_OLinear_${seq_len}_${pred_len} \
       --model $model_name \
       --data custom \
       --features M \

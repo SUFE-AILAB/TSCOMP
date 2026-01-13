@@ -27,7 +27,7 @@ do
       --data_path weather.csv \
       --q_mat_dir weather_${seq_len}_ratio0.7.npy \
       --q_out_mat_dir weather_${pred_len}_ratio0.7.npy \
-      --model_id Weather_OLinear_${seq_len}_${pred_len} \
+      --model_id weather_OLinear_${seq_len}_${pred_len} \
       --model $model_name \
       --data custom \
       --features M \

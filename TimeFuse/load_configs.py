@@ -496,18 +496,18 @@ def get_forecast_exp_args(
                         f"Loaded configuration from run_sota.py for {modelname}-{dataname}"
                     )
 
-                # Apply necessary overrides logic that TimeFuse expects
-                sota_args.data_name = dataname
-                if dataname in data_configs:
-                    if not hasattr(sota_args, "n_dim"):
-                        sota_args.n_dim = data_configs[dataname]["n_dim"]
-                    if not hasattr(sota_args, "root_path"):
-                        sota_args.root_path = data_configs[dataname]["root_path"]
+                # # Apply necessary overrides logic that TimeFuse expects
+                # sota_args.data_name = dataname
+                # if dataname in data_configs:
+                #     if not hasattr(sota_args, "n_dim"):
+                #         sota_args.n_dim = data_configs[dataname]["n_dim"]
+                #     if not hasattr(sota_args, "root_path"):
+                #         sota_args.root_path = data_configs[dataname]["root_path"]
 
-                sota_args.model_id = f"{dataname}_{seq_len}_{pred_len}"
+                # sota_args.model_id = f"{dataname}_{seq_len}_{pred_len}"
                 # Ensure training epoch is set (TimeFuse default is 10)
-                if not hasattr(sota_args, "train_epochs"):
-                    sota_args.train_epochs = 10
+                # if not hasattr(sota_args, "train_epochs"):
+                #     sota_args.train_epochs = 10
 
                 return sota_args
         else:

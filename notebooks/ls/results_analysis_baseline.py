@@ -39,8 +39,27 @@ def search_sota_performance(dataset, pred_lens=96,
         print(dataset)
         print(result_dict)
     df.columns = ['mse']
+    
+    # Check for duplicates
+    df['raw_fname'] = df.index
     df.index = [_.split('_')[1] if 'LTF' in _ or 'STF' in _ else _.split('_')[6] for _ in df.index]
     df = df[df.index.isin(BASELINE_LIST)]
+    
+    if df.index.duplicated().any():
+        print(f"\n!!! Duplicate Models Detected in Dataset: {dataset}, Pred_Len: {pred_lens} !!!")
+        dup_idx = df.index[df.index.duplicated()].unique()
+        for idx in dup_idx:
+            print(f"  Model: {idx}")
+            entries = df.loc[idx]
+            if isinstance(entries, pd.DataFrame):
+                print(f"    Files: {entries['raw_fname'].tolist()}")
+            else:
+                print(f"    File: {entries['raw_fname']}")
+        print("-" * 50)
+        # Drop duplicates to prevent crash
+        df = df[~df.index.duplicated(keep='first')]
+        
+    df = df.drop(columns=['raw_fname'])
     df = df.sort_index()
     return df
 

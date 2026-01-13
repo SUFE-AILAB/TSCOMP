@@ -32,6 +32,7 @@ do
       --dec_in 862 \
       --c_out 862 \
       --des 'Exp' \
+      --label_len 0 \
       --d_model ${d_models[i]} \
       --d_ff ${d_models[i]} \
       --batch_size 32 \

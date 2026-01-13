@@ -29,6 +29,7 @@ do
       --model $model_name \
       --data ETTm1 \
       --features M \
+      --label_len 0 \
       --seq_len ${seq_len} \
       --pred_len ${pred_len} \
       --enc_in 7 \

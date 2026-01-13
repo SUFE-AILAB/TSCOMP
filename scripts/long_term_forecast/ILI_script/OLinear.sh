@@ -21,14 +21,16 @@ do
     python -u run.py \
       --task_name long_term_forecast \
       --is_training 1 \
-      --root_path ./dataset/ILI/ \
+      --label_len 0 \
+      --root_path ./dataset/illness/ \
       --data_path national_illness.csv \
-      --q_mat_dir ILI_${seq_len}_ratio0.7.npy \
-      --q_out_mat_dir ILI_${pred_len}_ratio0.7.npy \
-      --model_id ILI_OLinear_${seq_len}_${pred_len} \
+      --q_mat_dir national_illness_${seq_len}_ratio0.7.npy \
+      --q_out_mat_dir national_illness_${pred_len}_ratio0.7.npy \
+      --model_id ili_OLinear_${seq_len}_${pred_len} \
       --model $model_name \
       --data custom \
       --features M \
+      --label_len 0 \
       --seq_len ${seq_len} \
       --pred_len ${pred_len} \
       --enc_in 7 \

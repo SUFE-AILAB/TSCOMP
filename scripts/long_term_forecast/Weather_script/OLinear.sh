@@ -33,6 +33,7 @@ do
       --features M \
       --seq_len ${seq_len} \
       --pred_len ${pred_len} \
+      --label_len 0 \
       --enc_in 21 \
       --dec_in 21 \
       --c_out 21 \

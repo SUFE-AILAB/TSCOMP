@@ -30,11 +30,12 @@ do
       --model $model_name \
       --data custom \
       --features M \
+      --label_len 0 \
       --seq_len ${seq_len} \
       --pred_len ${pred_len} \
-      --enc_in 12 \
-      --dec_in 12 \
-      --c_out 12 \
+      --enc_in 5 \
+      --dec_in 5 \
+      --c_out 5 \
       --des 'Exp' \
       --d_model ${d_models[i]} \
       --d_ff ${d_models[i]} \

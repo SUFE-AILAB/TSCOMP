@@ -31,6 +31,7 @@ do
       --model $model_name \
       --data custom \
       --features M \
+      --label_len 0 \
       --seq_len ${seq_len} \
       --pred_len ${pred_len} \
       --enc_in 8 \

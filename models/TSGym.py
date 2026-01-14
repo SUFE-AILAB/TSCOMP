@@ -452,7 +452,7 @@ class Model(nn.Module):
                 self.register_buffer('Q_out_mat', Q_out_mat)
                 self.dec_embedding = None
                 self.delta2 = nn.Parameter(torch.zeros(1, self.configs.enc_in, 1, self.pred_len))
-                self.enc_embedding_S = self.configs.enc_in+4 if self.gym_x_mark else self.configs.enc_in
+                self.enc_embedding_S = self.configs.enc_in
                 
                 if self.series_sampling: # CD + ortho-encoding + series_sampling
                     self.enc_embedding = nn.ModuleList(deepcopy(self.enc_embedding) for i in range(self.configs.down_sampling_layers + 1))
@@ -463,7 +463,7 @@ class Model(nn.Module):
                         Q_mat = torch.from_numpy(np.load(self.q_mat_dir[i])).to(torch.float32).transpose(-1, -2)
                         assert Q_mat.shape[0] == _seqlen
                         self.register_buffer(f'Q_mat_{i}', Q_mat)
-                        self.enc_embedding_S.append(self.configs.enc_in+4 if self.gym_x_mark else self.configs.enc_in)
+                        self.enc_embedding_S.append(self.configs.enc_in)
             elif self.gym_input_embed == 'series-encoding': # CD + series-encoding
                 if self.gym_network_architecture in ['GRU','MLP']:
                     self.enc_embedding = DataEmbedding_wo_pos(self.configs.enc_in, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
@@ -544,11 +544,18 @@ class Model(nn.Module):
                                                                                 self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
                                                             for i in range(self.configs.down_sampling_layers + 1)])
                     self.feature_encoder = nn.ModuleList(deepcopy(self.feature_encoder) for i in range(self.configs.down_sampling_layers + 1))
-                    self.seq_projector = nn.ModuleList([nn.Linear(self.configs.d_model, self.configs.seq_len // (self.configs.down_sampling_window ** i), bias=True)
-                                                        for i in range(self.configs.down_sampling_layers + 1)])
+                    if self.gym_input_embed == 'ortho-encoding':
+                        self.seq_projector = nn.ModuleList([nn.Linear(self.configs.d_model, self.configs.pred_len, bias=True)
+                                                            for i in range(self.configs.down_sampling_layers + 1)])
+                    else:
+                        self.seq_projector = nn.ModuleList([nn.Linear(self.configs.d_model, self.configs.seq_len // (self.configs.down_sampling_window ** i), bias=True)
+                                                            for i in range(self.configs.down_sampling_layers + 1)])
                 else:
                     self.feature_embedding = DataEmbedding_inverted(self.configs.seq_len, self.configs.d_model, self.configs.embed, self.configs.freq, self.configs.dropout)
-                    self.seq_projector = nn.Linear(self.configs.d_model, self.configs.seq_len, bias=True)
+                    if self.gym_input_embed == 'ortho-encoding':
+                        self.seq_projector = nn.Linear(self.configs.d_model, self.configs.pred_len, bias=True)
+                    else:
+                        self.seq_projector = nn.Linear(self.configs.d_model, self.configs.seq_len, bias=True)
     
     def _build_backbone(self):
         # encoder(-decoder)                        
@@ -1393,7 +1400,7 @@ class Model(nn.Module):
         # attention in encoder, the shape of enc_out
         # no patching: [bs x seq_len x d_model]
         # patching: [(bs * nvars) x patch_num x d_model]
-        print(enc_out.shape)
+        # print(enc_out.shape)
         enc_out, _ = self.encoder(enc_out, attn_mask=None, tau=tau, delta=delta)
         return enc_out
 

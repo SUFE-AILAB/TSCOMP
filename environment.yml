@@ -393,3 +393,12 @@ dependencies:
       - widgetsnbextension==4.0.14
       - xgboost==3.0.2
       - xlsxwriter==3.2.9
+      - sktime
+      - patool
+      - pandas
+      - scikit-learn
+      - matplotlib
+      - reformer-pytorch
+      - transformers
+      - xlstm
+      - momentfm

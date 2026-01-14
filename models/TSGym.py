@@ -236,10 +236,18 @@ class TSFM(nn.Module):
 # Update 20251109 cc: 重构模型框架，将各个模块解耦方便后续扩展
 # Update 20251226 ls:增加rag组件
 # Update 20251218 cc: 加入回归任务
-def get_q_mat_path(seqlen, predlen, dataset_name):
-    ratio = 0.6 if dataset_name in ['ETTh1','ETTh2','ETTm1','ETTm2'] else 0.7 
-    q_mat_path = f"{dataset_name}_{seqlen}_ratio{ratio}.npy"
-    q_out_mat_path = f"{dataset_name}_{predlen}_ratio{ratio}.npy"
+def get_q_mat_path(seqlen, predlen, dataset_name, configs=None):
+    if 'm4' in dataset_name.lower() or (configs and 'm4' in str(configs.data).lower()):
+        freq_str = 'Daily' # Default fallback
+        if configs and hasattr(configs, 'seasonal_patterns'):
+             freq_str = configs.seasonal_patterns
+        
+        q_mat_path = f"m4_{freq_str}_{seqlen}.npy"
+        q_out_mat_path = f"m4_{freq_str}_{predlen}.npy" 
+    else:
+        ratio = 0.6 if dataset_name in ['ETTh1','ETTh2','ETTm1','ETTm2'] else 0.7 
+        q_mat_path = f"{dataset_name}_{seqlen}_ratio{ratio}.npy"
+        q_out_mat_path = f"{dataset_name}_{predlen}_ratio{ratio}.npy"
     return q_mat_path, q_out_mat_path
 
 class Model(nn.Module):
@@ -277,17 +285,17 @@ class Model(nn.Module):
         self.gym_rag = eval(gym_rag) if isinstance(gym_rag, str) else gym_rag
         # Olinear Q-Mat
         if not self.gym_series_sampling:
-            self.q_mat_dir, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0])
+            self.q_mat_dir, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0], configs)
             self.q_mat_dir, self.q_out_mat_dir = os.path.join(configs.root_path, self.q_mat_dir), os.path.join(configs.root_path, self.q_out_mat_dir)
         else:
-            _, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0])
+            _, self.q_out_mat_dir = get_q_mat_path(self.seq_len, self.pred_len, configs.data_path.split('.')[0], configs)
             self.q_out_mat_dir = os.path.join(configs.root_path, self.q_out_mat_dir)
             self.q_mat_dir = []
             self.sampling_seqlen = []
             for _seqlen_ratio in [1,2,4,8]:
                 _seqlen = self.seq_len // _seqlen_ratio
                 self.sampling_seqlen.append(_seqlen)
-                _qmat_path, _ = get_q_mat_path(_seqlen, self.pred_len, configs.data_path.split('.')[0])
+                _qmat_path, _ = get_q_mat_path(_seqlen, self.pred_len, configs.data_path.split('.')[0], configs)
                 self.q_mat_dir.append(os.path.join(configs.root_path, _qmat_path))
 
 

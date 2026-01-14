@@ -3,7 +3,7 @@ from data_provider.data_loader import M4ValiDataset
 from data_provider.m4 import M4Meta
 from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from utils.losses import PSLoss, mape_loss, mase_loss, smape_loss, FreDFLoss, DBLoss
+from utils.losses import PSLoss, mape_loss, mase_loss, smape_loss, FreDFLoss, DBLoss, WeightedL1Loss
 from utils.m4_summary import M4Summary
 import torch
 import torch.nn as nn
@@ -100,6 +100,8 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         elif loss_name == 'FreDFLoss':
             self.fredf_loss = FreDFLoss(self.args, self.device)
             return smape_loss()
+        elif loss_name == 'WeightedL1':
+            return WeightedL1Loss(alpha=0.5, loss_mode='L1')
         else:
             raise NotImplementedError
 
@@ -125,7 +127,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         else:
             best_model_path = path + '/' + 'checkpoint.pth'
             
-        if os.path.exists(best_model_path):
+        if os.path.exists(best_model_path) and False:
             self.logger.info(f'The model file already exists! loading...')
             self.model.load_state_dict(torch.load(best_model_path))
         else:
@@ -168,7 +170,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
 
                     batch_y_mark = batch_y_mark[:, -self.args.pred_len:, f_dim:].to(self.device)
-                    loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
+                    if isinstance(criterion, (mape_loss, mase_loss, smape_loss)):
+                        loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
+                    else:
+                        loss_value = criterion(outputs, batch_y)
                     # loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
                     loss = loss_value  # + loss_sharpness * 1e-5
                     # Add aux Loss
@@ -254,7 +259,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             true = torch.from_numpy(np.array(y))
             batch_y_mark = torch.ones(true.shape)
 
-            loss = criterion(x.detach().cpu()[:, :, 0], self.args.frequency_map, pred[:, :, 0], true, batch_y_mark)
+            if isinstance(criterion, (mape_loss, mase_loss, smape_loss)):
+                loss = criterion(x.detach().cpu()[:, :, 0], self.args.frequency_map, pred[:, :, 0], true, batch_y_mark)
+            else:
+                loss = criterion(pred[:, :, 0], true)
 
         self.model.train()
         return loss

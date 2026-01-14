@@ -12,28 +12,28 @@ random.seed(42)
 
 # --- 拆分后的 Seed Lists ---
 SOTA_MODELS_MLP = [
-    "TSGym_False_False_RevIN_MA_True_series-encoding_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_False_Stat_None_False_inverted-encoding_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_True_RevIN_MA_False_series-encoding_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_False_None_MA_True_series-encoding_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_False_Stat_DFT_False_series-encoding_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_False_Stat_DFT_True_series-patching_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_True_RevIN_None_True_series-encoding_MLP_DNN_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
-    "TSGym_False_False_RevIN_None_False_ortho-encoding_MLP_NormLin_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs"
+    "TSGym_False_False_RevIN_MA_True_series-encoding_MLP_DNN_self-attention_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_False_Stat_None_False_inverted-encoding_MLP_DNN_self-attention_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_True_RevIN_MA_False_series-encoding_MLP_DNN_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_False_None_MA_True_series-encoding_MLP_DNN_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_False_Stat_DFT_False_series-encoding_MLP_DNN_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_False_Stat_DFT_True_series-patching_MLP_DNN_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_True_RevIN_None_True_series-encoding_MLP_DNN_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
+    "TSGym_False_False_RevIN_None_False_ortho-encoding_MLP_NormLin_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs"
 ]
 
 SOTA_MODELS_GRU = [
-    "TSGym_False_False_Stat_None_True_series-patching_GRU_GRU_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs",
+    "TSGym_False_False_Stat_None_True_series-patching_GRU_GRU_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs",
 ]
 
 SOTA_MODELS_Transformers = [
-    "TSGym_False_False_None_None_True_series-patching_Transformer_self-attention_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # CrossFormer, 但是我们没有two-step Attention,可以去掉
-    "TSGym_False_False_Stat_None_True_series-patching_Transformer_self-attention_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # PatchTST
-    "TSGym_False_False_Stat_DFT_False_series-encoding_Transformer_destationary-attention_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # Non-stationary Transformer
-    "TSGym_False_False_None_MoEMA_False_series-encoding_Transformer_frequency-enhanced-attention_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # FedFormer
-    "TSGym_False_True_None_None_False_series-encoding_Transformer_self-attention_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # Pyraformer
-    "TSGym_False_False_None_None_False_series-encoding_Transformer_sparse-attention_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # Informer
-    "TSGym_False_False_None_None_False_series-encoding_Transformer_auto-correlation_null_True_False_False_HP_dmodel_elayers_30_SMAPE_lr_lrs", # AutoFormer
+    "TSGym_True_False_None_None_True_series-patching_Transformer_self-attention_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # CrossFormer, 但是我们没有two-step Attention,可以去掉
+    "TSGym_False_False_Stat_None_True_series-patching_Transformer_self-attention_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # PatchTST
+    "TSGym_True_False_Stat_DFT_False_series-encoding_Transformer_destationary-attention_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # Non-stationary Transformer
+    "TSGym_True_False_None_MoEMA_False_series-encoding_Transformer_frequency-enhanced-attention_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # FedFormer
+    "TSGym_True_True_None_None_False_series-encoding_Transformer_self-attention_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # Pyraformer
+    "TSGym_False_False_None_None_False_series-encoding_Transformer_sparse-attention_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # Informer
+    "TSGym_True_False_None_None_False_series-encoding_Transformer_auto-correlation_null_True_False_False_HP_seqlen_dmodel_elayers_30_MSE_lr_lrs", # AutoFormer
 ]
 
 SOTA_MODELS_LLM = [
@@ -51,7 +51,7 @@ def wrong_setting(gym_x_mark, series_sampling, series_norm, series_decomp, chann
     if attn == 'destationary-attention' and input_embed != 'series-encoding': return True
     if channel_independent and feature_attn != 'null': return True
     if gym_frozen and network_architecture not in ['LLM-GPT4TS', 'LLM-TimeLLM','TSFM-Timer', 'TSFM-Moment', 'TSFM-TimeMoE', 'TSFM-TimerXL', 'TSFM-Chronos']: return True
-    #目前只接受冻结的LLM和TSFM
+     #目前只接受冻结的LLM和TSFM
     if not gym_frozen and network_architecture in ['LLM-GPT4TS', 'LLM-TimeLLM','TSFM-Timer', 'TSFM-Moment', 'TSFM-TimeMoE', 'TSFM-TimerXL', 'TSFM-Chronos']: return True
     if network_architecture in ['LLM-GPT4TS', 'LLM-TimeLLM','TSFM-Timer', 'TSFM-Moment', 'TSFM-TimeMoE', 'TSFM-TimerXL', 'TSFM-Chronos'] and attn != 'self-attention': return True
     if network_architecture in ['GRU','MLP'] and input_embed == 'inverted-encoding': return True
@@ -75,7 +75,7 @@ class SOTA_Ablation_Generator:
     def __init__(self):
         # 1. Component Space
         self.COMPONENT_SPACE = {
-            1: ['False'], # gym_x_mark
+            1: ['False', 'True'], # gym_x_mark
             2: ['False', 'True'], # gym_series_sampling
             3: ['None', 'Stat', 'RevIN', 'DishTS'], # gym_series_norm
             4: ['None', 'MA', 'MoEMA', 'DFT'], # gym_series_decomp
@@ -84,23 +84,23 @@ class SOTA_Ablation_Generator:
             # network 在随机生成时会被强制指定，这里仅作参考
             7: ['Transformer','MLP','GRU','LLM-GPT4TS', 'LLM-TimeLLM','TSFM-Timer', 'TSFM-Moment', 'TSFM-TimeMoE', 'TSFM-TimerXL', 'TSFM-Chronos'], 
             8: ['null', 'self-attention', 'auto-correlation', 'sparse-attention', 'frequency-enhanced-attention', 'destationary-attention', 'GRU', 'DNN', 'NormLin','xLSTM'], # gym_attn
-            9: ['null'], # gym_feature_attn
+            9: ['null', 'self-attention', 'sparse-attention'], # gym_feature_attn
             11: ['False', 'True'], # gym_frozen
             12: ['False', 'True'], # gym_RAG
-            17: ['SMAPE', 'MAPE', 'MASE', 'DBLoss', 'PSLoss', 'FreDFLoss'], # loss functions
+            18: ['MSE', 'MAE', 'HUBER', 'DBLoss', 'PSLoss', 'FreDFLoss'], # loss functions
         }
 
         # 2. HP Options
         self.HP_OPTIONS = {
             'Transformer': {
-                # 'seqlen': ['48', '96', '192', '512'], # Fixed in short term
+                'seqlen': ['48', '96', '192', '512'],
                 'dmodel': ['64-256'],
                 'elayers': ['2'],
                 'lr': ['0.0001'],
                 'lrs': ['cosine']
             },
             'non_Transformer': { 
-                # 'seqlen': ['48', '96', '192', '512'], # Fixed in short term
+                'seqlen': ['48', '96', '192', '512'],
                 'dmodel': ['64-256'],
                 'elayers': ['2'],
                 'lr': ['0.0001'],
@@ -112,13 +112,13 @@ class SOTA_Ablation_Generator:
     def expand_seeds(self, seed_templates, hp_config_key):
         expanded_models = []
         hp_space = self.HP_OPTIONS[hp_config_key]
-        keys = ['dmodel', 'elayers', 'lr', 'lrs']
+        keys = ['seqlen', 'dmodel', 'elayers', 'lr', 'lrs']
         hp_combinations = list(itertools.product(*[hp_space[k] for k in keys]))
         
         for template in seed_templates:
             parts = template.split('_')
             try:
-                # idx_seqlen = parts.index('seqlen') # Removed
+                idx_seqlen = parts.index('seqlen')
                 idx_dmodel = parts.index('dmodel')
                 idx_elayers = parts.index('elayers')
                 idx_lr = parts.index('lr')
@@ -127,8 +127,7 @@ class SOTA_Ablation_Generator:
                 continue
             for combo in hp_combinations:
                 new_parts = parts.copy()
-                # new_parts[idx_seqlen], new_parts[idx_dmodel], new_parts[idx_elayers], new_parts[idx_lr], new_parts[idx_lrs] = combo
-                new_parts[idx_dmodel], new_parts[idx_elayers], new_parts[idx_lr], new_parts[idx_lrs] = combo
+                new_parts[idx_seqlen], new_parts[idx_dmodel], new_parts[idx_elayers], new_parts[idx_lr], new_parts[idx_lrs] = combo
                 expanded_models.append('_'.join(new_parts))
         return expanded_models
 
@@ -191,11 +190,11 @@ class SOTA_Ablation_Generator:
             
             # Index 14-18 (HP部分) + 18(Loss)
             # seqlen, dmodel, elayers, epochs(30), loss, lr, lrs
-            # parts.append(random.choice(hp_space['seqlen'])) # <--- Removed for Short Term
+            parts.append(random.choice(hp_space['seqlen']))
             parts.append(random.choice(hp_space['dmodel']))
             parts.append(random.choice(hp_space['elayers']))
             parts.append("30") # Epochs 固定
-            parts.append(random.choice(self.COMPONENT_SPACE[17])) # Loss
+            parts.append(random.choice(self.COMPONENT_SPACE[18])) # Loss
             parts.append(random.choice(hp_space['lr']))
             parts.append(random.choice(hp_space['lrs']))
             
@@ -214,7 +213,7 @@ class SOTA_Ablation_Generator:
             feature_attn = parts[9]
             gym_frozen = parts[11] == 'True'
             gym_rag = parts[12] == 'True'
-            gym_loss = parts[17] # index 17
+            gym_loss = parts[18] # index 18
             
             if not wrong_setting(gym_x_mark, series_sampling, series_norm, series_decomp, 
                                channel_independent, input_embed, network_architecture, 
@@ -243,7 +242,7 @@ class SOTA_Ablation_Generator:
                 feature_attn = components[9]
                 gym_frozen = components[11] == 'True'
                 gym_rag = components[12] == 'True'
-                gym_loss = components[17]
+                gym_loss = components[18]
 
                 if allowed_networks and network_architecture not in allowed_networks: continue
 
@@ -261,31 +260,31 @@ class SOTA_Ablation_Generator:
         groups = {
             'MLP': {
                 'seeds': SOTA_MODELS_MLP,
-                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 17],
+                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 18],
                 'allowed_nets': ['MLP'],
                 'hp_config': 'non_Transformer'
             },
             'GRU': {
                 'seeds': SOTA_MODELS_GRU,
-                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 17],
+                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 18],
                 'allowed_nets': ['GRU'],
                 'hp_config': 'non_Transformer'
             },
             'Transformer': {
                 'seeds': SOTA_MODELS_Transformers,
-                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 17],
+                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 18],
                 'allowed_nets': ['Transformer'],
                 'hp_config': 'Transformer'
             },
             'LLM': {
                 'seeds': SOTA_MODELS_LLM,
-                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 17],
+                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 18],
                 'allowed_nets': ['LLM-GPT4TS', 'LLM-TimeLLM'],
                 'hp_config': 'Transformer'
             },
             'TSFM': {
                 'seeds': SOTA_MODELS_TSFM,
-                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 17],
+                'targets': [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 18],
                 'allowed_nets': ['TSFM-Timer', 'TSFM-Moment', 'TSFM-TimeMoE', 'TSFM-TimerXL', 'TSFM-Chronos'],
                 'hp_config': 'Transformer'
             }
@@ -338,6 +337,7 @@ def calculate_component_proportions(strings):
     
     return proportions
 
+
 from itertools import product
 import numpy as np
 import random
@@ -349,12 +349,12 @@ generator = SOTA_Ablation_Generator()
 results = generator.run()
 
 
-for setting_idx, gym_type in enumerate(['LLM', 'TSFM']):# , 'LLM', 'TSFM'
+for setting_idx, gym_type in enumerate(['LLM', 'TSFM']):
     model_names_random = results[gym_type+"_random"]
     print(f"gen scripts:{len(model_names_random)}")
     print(calculate_component_proportions(model_names_random))
     # 给每个setting设置一个编号,前缀分别表示longterm forecasting, random or sota, gym_type
-    model_names_random = [m.replace("TSGym", f"TSGym00{setting_idx}{str(i).zfill(4)}") for i,m in enumerate(model_names_random)]
+    model_names_random = [m.replace("TSGym", f"TSGym10{setting_idx}{str(i).zfill(4)}") for i,m in enumerate(model_names_random)]
     
     model_names_sota = results[gym_type+"_sota"]
     print(f"gen scripts:{len(model_names_sota)}")
@@ -363,18 +363,21 @@ for setting_idx, gym_type in enumerate(['LLM', 'TSFM']):# , 'LLM', 'TSFM'
     else:
         print(calculate_component_proportions(model_names_sota))
         # 给每个setting设置一个编号,前缀分别表示longterm forecasting, random or sota, gym_type
-        model_names_sota = [m.replace("TSGym", f"TSGym01{setting_idx}{str(i).zfill(4)}") for i,m in enumerate(model_names_sota)]
+        model_names_sota = [m.replace("TSGym", f"TSGym11{setting_idx}{str(i).zfill(4)}") for i,m in enumerate(model_names_sota)]
 
         # 合并两部分
         model_names = model_names_random + model_names_sota
     
-    for dataset in ['M4']:
+    for dataset in ['ETTh1','ECL', 'ETTh1', 'ETTh2', 'ETTm1', 'ETTm2', 'Exchange', 'ILI', 'Traffic', 'Weather','NYSE','NASDAQ']:
     # for dataset in ['covid-19', 'fred-md']:
         # 模板文件路径
-        template_path = f'scripts/short_term_forecast/TSGym_{dataset}.sh'
+        if 'ETT' in dataset:
+            template_path = f'scripts/long_term_forecast/{dataset}_script/TSGym_{dataset}.sh'
+        else:
+            template_path = f'scripts/long_term_forecast/{dataset}_script/TSGym.sh'
             
         # 输出目录
-        output_dir = f'scripts/short_term_forecast/gym_{gym_type}'
+        output_dir = f'scripts/long_term_forecast/{dataset}_script/gym_{gym_type}'
 
         # 确保输出目录存在,如果现在存在则删除
         if os.path.exists(output_dir):
@@ -396,11 +399,12 @@ for setting_idx, gym_type in enumerate(['LLM', 'TSFM']):# , 'LLM', 'TSFM'
             HP = model_name[model_name.find('_HP')+4:]
             model_name = model_name[:model_name.find('_HP')]
 
-            dm_df, el, epochs, loss, lr, lr_strategy = HP.split('_')
+            seq_len, dm_df, el, epochs, loss, lr, lr_strategy = HP.split('_')
             dm, df = dm_df.split('-')[0], dm_df.split('-')[1]
 
             # 替换模型名称
             script_content = template_content.replace('$model_name', model_name)
+            script_content = script_content.replace(f'$seq_len', seq_len)
             script_content = script_content.replace(f'$d_model', dm)
             script_content = script_content.replace(f'$d_ff', df)
             script_content = script_content.replace(f'$e_layers', el)

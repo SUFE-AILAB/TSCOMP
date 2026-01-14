@@ -213,6 +213,30 @@ def create_task_list(param_devices, env, dataset):
                 patch_len = 2
                 if model_name == 'SegRNN' and 'Weekly' in data_name:
                     patch_len = 1
+                if model_name == 'OLinear':
+                    # M4 seq_len/pred_len rules
+                    m4_horizons_map = {
+                        'Yearly': 6,
+                        'Quarterly': 8,
+                        'Monthly': 18,
+                        'Weekly': 13,
+                        'Daily': 14,
+                        'Hourly': 48
+                    }
+                    _pred = m4_horizons_map.get(seasonal_patterns, 14)
+                    _seq = 2 * _pred
+                    
+                    # Create dummy config for get_q_mat_path resolution
+                    class Config: pass
+                    cfg = Config()
+                    cfg.seasonal_patterns = seasonal_patterns
+                    cfg.data = 'm4'
+                    
+                    q_mat_path, q_out_mat_path = get_q_mat_path(_seq, _pred, data_name, cfg)
+                    loss = 'WeightedL1'
+                else:
+                    q_mat_path, q_out_mat_path = 'q_mat.npy','q_out_mat.npy'
+                    loss = 'SMAPE'
                 task_command = f"""CUDA_VISIBLE_DEVICES={param_devices} python3 -u run.py \
                         --task_name short_term_forecast \
                         --is_training 1 \
@@ -235,14 +259,16 @@ def create_task_list(param_devices, env, dataset):
                         --down_sampling_method avg \
                         --d_model {d_model} \
                         --d_ff {d_ff} \
-                        --loss 'SMAPE' \
+                        --loss {loss} \
                         --batch_size 16 \
                         --learning_rate 0.001 \
                         --devices {param_devices} \
                         --patch_len {patch_len} \
                         --seg_len {patch_len} \
                         --is_gpt {is_gpt} \
-                        --n_period {n_period}"""
+                        --n_period {n_period} \
+                        --q_mat_dir {q_mat_path} \
+                        --q_out_mat_dir {q_out_mat_path} """
                 task_list.append(task_command)
 
             else:

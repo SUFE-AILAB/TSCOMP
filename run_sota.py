@@ -12,7 +12,7 @@ def run_task(task_command, task_id):
     except subprocess.CalledProcessError as e:
         print(f"\nError executing task {task_id}: \n{e}", flush=True)
 
-def create_task_list(param_devices, env, dataset):
+def create_task_list(param_devices, env, dataset, singlemodel=None):
     # https://decisionintelligence.github.io/OpenTS/datasets/#Multivariate-time-series
     # Prepare the cleaned data from the OCR result
     data=[
@@ -111,13 +111,16 @@ def create_task_list(param_devices, env, dataset):
     task_list = []
     if env == 'mqenv' or env == 'base':
         # TODO 更新sota
-        model_list =  ['Autoformer', 'PatchTST', 'DLinear', 'LightTS', 'Pyraformer', 
-                        'MICN', 'Koopa', 'FEDformer', 'Reformer', 'SegRNN', 
-                        'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
-                        'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
-                        'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
-        model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear', 'CrossCrossModel']
-        # model_list += ['Timer', 'TimeLLM', 'Moment', 'TimeBridge']
+        if singlemodel is not None:
+            model_list = [singlemodel]
+        else:
+            model_list =  ['Autoformer', 'PatchTST', 'DLinear', 'LightTS', 'Pyraformer', 
+                            'MICN', 'Koopa', 'FEDformer', 'Reformer', 'SegRNN', 
+                            'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
+                            'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
+                            'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
+            model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear', 'CrossCrossModel']
+            # model_list += ['Timer', 'TimeLLM', 'Moment', 'TimeBridge']
     elif env =='mamba':
          # 在虚拟环境mamba中运行
         model_list =  ['Mamba'] # ,'MambaSimple'
@@ -372,6 +375,11 @@ def create_task_list(param_devices, env, dataset):
                             batch_size=16
                             learning_rate=0.01
                     
+                    expand_str = ""
+                    if model_name == 'TiDE' and pred_len == 720:
+                        batch_size = 4
+                        expand_str = "\
+                        --use_multi_gpu"
                     if model_name == 'OLinear':
                         q_mat_path, q_out_mat_path = get_q_mat_path(seq_len, pred_len, data_name)
                         loss = 'WeightedL1'
@@ -412,7 +420,7 @@ def create_task_list(param_devices, env, dataset):
                             --is_gpt {is_gpt} \
                             --loss {loss} \
                             --q_mat_dir {q_mat_path} \
-                            --q_out_mat_dir {q_out_mat_path} """
+                            --q_out_mat_dir {q_out_mat_path} {expand_str}"""
                     task_list.append(task_command)
     
     return task_list
@@ -424,9 +432,10 @@ def main():
     parser.add_argument('--dataset', type=str, default='ili', help='dataset name')
     parser.add_argument('--processes_num', type=int, default=1, help='processes')
     parser.add_argument('--env', type=str, default='mqenv', help='env')
+    parser.add_argument('--singlemodel', type=str, default=None, help='model')
     args = parser.parse_args()
     
-    task_list = create_task_list(args.devices, args.env, args.dataset)
+    task_list = create_task_list(args.devices, args.env, args.dataset, args.singlemodel)
 
     # 使用 multiprocessing.Pool 来并行运行任务
     with Pool(processes=args.processes_num) as pool:  # 设置进程池的大小（例如5个并行进程）

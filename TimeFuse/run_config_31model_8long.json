@@ -1,0 +1,55 @@
+{
+    "datasets": [
+      "ETTh1",
+      "ETTh2",
+      "ETTm1",
+      "ETTm2",
+      "weather",
+      "electricity",
+      "traffic",
+      "exchange"
+    ],
+    "models": [
+      "Autoformer", 
+      "PatchTST", 
+      "DLinear", 
+      "LightTS", 
+      "Pyraformer", 
+      "MICN", 
+      "Koopa", 
+      "FEDformer", 
+      "Reformer", 
+      "SegRNN", 
+      "Crossformer",
+      "TimeMixer", 
+      "Nonstationary_Transformer", 
+      "FiLM", 
+      "ETSformer",
+      "TSMixer", 
+      "TimeXer", 
+      "iTransformer", 
+      "Informer", 
+      "FreTS", 
+      "SCINet", 
+      "PAttn",
+      "TiDE" , 
+      "TimesNet", 
+      "Transformer",
+      "DUET", 
+      "RAFT", 
+      "GPT4TS", 
+      "OLinear", 
+      "CrossCrossModel",
+      "Mamba"
+    ],
+    "forecast_settings": [
+      [96, 48, 96],
+            [96, 48, 192],
+            [96, 48, 336],
+            [96, 48, 720]
+    ],
+    "override_args": {
+        "use_gpu": true,
+        "gpu": 0
+    }
+  }

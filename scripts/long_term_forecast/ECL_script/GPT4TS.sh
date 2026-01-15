@@ -16,7 +16,7 @@ python run.py \
     --seq_len $seq_len \
     --label_len 48 \
     --pred_len $pred_len \
-    --batch_size 2048 \
+    --batch_size 16 \
     --learning_rate 0.0001 \
     --train_epochs 10 \
     --d_model 768 \
@@ -30,5 +30,6 @@ python run.py \
     --llm_layers 6 \
     --itr 1 \
     --model $model \
-    --is_gpt 1
+    --is_gpt 1 \
+    --use_multi_gpu
 done

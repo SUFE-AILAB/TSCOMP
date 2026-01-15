@@ -29,9 +29,14 @@ import time
 import tqdm
 
 # [1] Load Experiment Configs
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', type=str, default='TimeFuse/run_config.json', help='Path to run config json')
+parser.add_argument('--desc', type=str, default='combined', help='Description for output file suffix')
+main_args = parser.parse_args()
 
 # load the TimeFuse exp configs
-run_configs = load_run_config("TimeFuse/run_config.json", verbose=True)
+run_configs = load_run_config(main_args.config, verbose=True)
 
 # load the base model exp args (used for TSLib models) for base model train and inference
 all_exp_args = get_all_exp_args(
@@ -41,7 +46,7 @@ all_exp_args = get_all_exp_args(
     override_args=run_configs["override_args"],
     base_config_path="scripts/long_term_forecast/",
     run_sota_path="run_sota.py",
-    verbose=False,
+    verbose=True,
 )
 
 # print(all_exp_args)
@@ -53,11 +58,20 @@ def get_config_by_pred_len(all_exp_args, dataset_name, model_name, pred_len):
     """
     candidates = []
     target_suffix = f"_{pred_len}"
-    target_prefix = f"{dataset_name}_{model_name}_"
     
-    for key, args in all_exp_args.items():
-        if key.startswith(target_prefix) and key.endswith(target_suffix):
-             candidates.append(args)
+    # Handle both full dataset name or shorthand if used in key
+    # e.g. "exchange" or "exchange_rate"
+    possible_names = [dataset_name]
+    if dataset_name == "exchange": possible_names.append("exchange_rate")
+    
+    for d_name in possible_names:
+        target_prefix = f"{d_name}_{model_name}_"
+        for key, args in all_exp_args.items():
+            if key.startswith(target_prefix) and key.endswith(target_suffix):
+                 candidates.append(args)
+    
+        if candidates:
+            break
              
     if not candidates:
         return None
@@ -283,7 +297,7 @@ def extract_output_pred_true(
 
 
 split_names = ["val", "test"]
-meta_train_root = "TimeFuse/meta_data"
+meta_train_root = f"TimeFuse/meta_data_{main_args.desc}"
 
 for dataset_name in run_configs["datasets"]:
     for seq_len, label_len, pred_len in run_configs["forecast_settings"]:
@@ -311,6 +325,134 @@ for dataset_name in run_configs["datasets"]:
                 force_override=True,
             )
 
+def save_final_comparison(few_shot_list, zero_shot_list, desc_suffix=main_args.desc):
+    if not few_shot_list or not zero_shot_list:
+        print("Missing results for one mode, skipping comparison save.")
+        if few_shot_list:
+             print("Saving partial results for fewshot...")
+             pd.DataFrame(few_shot_list).to_csv(f"TimeFuse/results_fuse_fewshot_partial_{desc_suffix}.csv", index=False)
+        if zero_shot_list:
+             print("Saving partial results for zeroshot...")
+             pd.DataFrame(zero_shot_list).to_csv(f"TimeFuse/results_fuse_zeroshot_partial_{desc_suffix}.csv", index=False)
+        return
+
+    df_few = pd.DataFrame(few_shot_list)
+    df_zero = pd.DataFrame(zero_shot_list)
+    
+    # Rename TimeFuse columns
+    df_few.rename(columns={"TimeFuse (Ours)": "TimeFuse (Few-shot)"}, inplace=True)
+    df_zero.rename(columns={"TimeFuse (Ours)": "TimeFuse (Zero-shot)"}, inplace=True)
+    
+    keys = ["Dataset", "Pred_Len", "Metric"]
+    
+    # Merge
+    print("Merging Few-shot and Zero-shot results...")
+    merged = pd.merge(df_few, df_zero, on=keys, suffixes=('_few', '_zero'))
+    
+    # Baseline columns check and merge
+    baseline_potential_cols = [c for c in df_few.columns if c not in keys and c != "TimeFuse (Few-shot)"]
+    final_baseline_cols = []
+    
+    for col in baseline_potential_cols:
+        col_few = f"{col}_few"
+        col_zero = f"{col}_zero"
+        
+        if col_few in merged.columns and col_zero in merged.columns:
+            # Just take few-shot version as truth for baseline
+            merged[col] = merged[col_few]
+            merged.drop(columns=[col_few, col_zero], inplace=True)
+            final_baseline_cols.append(col)
+        elif col in merged.columns:
+             # Already there (maybe no collision/suffix if missing in one df?)
+             final_baseline_cols.append(col)
+    
+    # Reorder columns
+    # 1. Keys
+    # 2. TimeFuse versions
+    # 3. Baselines (use run_configs order preferred previously: reverse config order)
+    
+    ordered_models = ["TimeFuse (Few-shot)", "TimeFuse (Zero-shot)"]
+    
+    # Check run_configs baselines
+    baselines_ordered = []
+    if "models" in run_configs:
+        for m in run_configs["models"][::-1]: # Reverse order used in previous logic
+            if m in final_baseline_cols:
+                baselines_ordered.append(m)
+    
+    # Append any remaining baselines that weren't in config list
+    for m in final_baseline_cols:
+        if m not in baselines_ordered:
+            baselines_ordered.append(m)
+            
+    final_cols = keys + ordered_models + baselines_ordered
+    # Filter columns that actually exist
+    final_cols = [c for c in final_cols if c in merged.columns]
+    
+    df_final = merged[final_cols].sort_values(by=keys)
+    
+    excel_path = f"TimeFuse/results_fuse_comparison_{desc_suffix}.xlsx"
+    csv_path = f"TimeFuse/results_fuse_comparison_{desc_suffix}.csv"
+    
+    df_final.to_csv(csv_path, index=False)
+    print(f"Comparison CSV saved to {csv_path}")
+    
+    # Excel Formatting with Red/Blue highlighting
+    try:
+        import xlsxwriter
+        with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
+            df_final.to_excel(writer, sheet_name='Sheet1', index=False)
+            workbook = writer.book
+            worksheet = writer.sheets['Sheet1']
+            
+            red_format = workbook.add_format({'font_color': 'red', 'bold': True})
+            blue_format = workbook.add_format({'font_color': 'blue', 'bold': True})
+            
+            (max_row, max_col) = df_final.shape
+            
+            # Identify where models start. Keys are first.
+            # We assume keys are "Dataset", "Pred_Len", "Metric" -> 3 columns
+            base_cols_count = len([k for k in keys if k in df_final.columns])
+            model_start_idx = base_cols_count
+            
+            for r in range(max_row):
+                excel_row = r + 1
+                row_values = df_final.iloc[r, model_start_idx:].values
+                
+                try:
+                    numeric_values = pd.to_numeric(row_values, errors='coerce')
+                except:
+                    continue
+                    
+                if np.isnan(numeric_values).all():
+                    continue
+                    
+                valid_indices = np.where(~np.isnan(numeric_values))[0]
+                if len(valid_indices) == 0:
+                     continue
+                     
+                valid_values = numeric_values[valid_indices]
+                sorted_valid_indices = valid_indices[np.argsort(valid_values)]
+                
+                best_idx = sorted_valid_indices[0]
+                second_best_idx = sorted_valid_indices[1] if len(sorted_valid_indices) > 1 else None
+                
+                # Apply Red to Best
+                excel_col_best = model_start_idx + best_idx
+                val_best = df_final.iloc[r, excel_col_best]
+                worksheet.write(excel_row, excel_col_best, val_best, red_format)
+                
+                # Apply Blue to Second Best
+                if second_best_idx is not None:
+                     excel_col_second = model_start_idx + second_best_idx
+                     val_second = df_final.iloc[r, excel_col_second]
+                     worksheet.write(excel_row, excel_col_second, val_second, blue_format)
+                     
+        print(f"Comparison Excel saved to {excel_path} with highlighting.")
+    except ImportError:
+        print("openpyxl or xlsxwriter not installed, skipping Excel save.")
+    except Exception as e:
+        print(f"Error saving Excel: {e}")
 
 
 # [4] TimeFuse: Fusor training and evaluation
@@ -344,6 +486,10 @@ dim_model_weights = len(
 
 # Outer loop: iterate over forecast settings (e.g., varying horizons)
 from utils.metrics import metric, ALL_METRICS
+
+# Store all results across different forecast settings
+all_few_shot_results_list = []
+all_zero_shot_results_list = []
 
 for forecast_settings in run_configs["forecast_settings"]:
     print(f"\n////// Forecast: {forecast_settings} //////\n")
@@ -486,84 +632,43 @@ for forecast_settings in run_configs["forecast_settings"]:
             device,
         )
         
-        # Integrate results
+        # Integrate and Save results immediately
+        metrics = ["mse", "mae"]
+        current_pl = forecast_settings[2] # seq_len, label_len, pred_len
+
         for data_name in model_scores.keys():
             model_scores[data_name]["TimeFuse (Ours)"] = meta_test_scores[data_name]
+            
+            # Select target list for storage
             if target_name == "All":
-                few_shot_results[data_name] = model_scores[data_name]
+                target_list = all_few_shot_results_list
             else:
-                zero_shot_results[data_name] = model_scores[data_name]
+                target_list = all_zero_shot_results_list
 
-    # [5] Results Print (Global)
-    print(f"\n\n{'='*20} Final Results for Forecast Setting: {forecast_settings} {'='*20}")
-    
-    metrics = ["mse", "mae"]
-    print_models = ["TimeFuse (Ours)"] + run_configs["models"][::-1]
-    len_cell = 18
-
-    def process_and_save_results(scores_dict, mode_name):
-        if not scores_dict:
-            return
-
-        print(f"\n--- {mode_name} Results ---")
-        info = f"{'Dataset':<{len_cell}}{'Metric':<{len_cell}}"
-        for model_name in print_models:
-            info += f"{model_name:<{len_cell}}"
-        print(info)
-
-        datasets_sorted = sorted(scores_dict.keys())
-        
-        results_list = []
-        for data_name in datasets_sorted:
-            data_scores = scores_dict[data_name]
+            # Create rows for this dataset
+            data_scores = model_scores[data_name]
             for metric_name in metrics:
-                info = f"{data_name:<{len_cell}}{metric_name.upper():<{len_cell}}"
-                
-                scores = []
-                for model_name in print_models:
+                row = {
+                    "Dataset": data_name, 
+                    "Pred_Len": current_pl,
+                    "Metric": metric_name.upper()
+                }
+                for model_name in run_configs["models"]: # Ensure consistency
                     if model_name in data_scores:
-                        scores.append(data_scores[model_name][metric_name])
+                        row[model_name] = data_scores[model_name][metric_name]
                     else:
-                        scores.append(float('inf'))
+                        row[model_name] = float('inf')
+                # Add TimeFuse
+                if "TimeFuse (Ours)" in data_scores:
+                     row["TimeFuse (Ours)"] = data_scores["TimeFuse (Ours)"][metric_name]
+                else:
+                     row["TimeFuse (Ours)"] = float('inf')
+                     
+                target_list.append(row)
+        
+        # Save results immediately
+        print("Saving intermediate results...")
+        save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list)
 
-                model_score_ranks = np.argsort(scores)
-                
-                row = {"Dataset": data_name, "Metric": metric_name.upper()}
-
-                for i_model, model_name in enumerate(print_models):
-                    val = scores[i_model]
-                    row[model_name] = val
-                    
-                    score_str = f"{val:.4f}"
-                    if model_score_ranks[i_model] == 0:
-                        score_str = f"\033[1;32m{f'{score_str}**':<{len_cell}}\033[0m"
-                    elif model_score_ranks[i_model] == 1:
-                        score_str = f"\033[1;33m{f'{score_str}*':<{len_cell}}\033[0m"
-                    else:
-                        score_str = f"\033[1;31m{score_str:<{len_cell}}\033[0m"
-                    info += f"{score_str:<{len_cell}}"
-                print(info)
-                results_list.append(row)
-
-        # Save to CSV/Excel
-        df_results = pd.DataFrame(results_list)
-        cols = ["Dataset", "Metric"] + print_models
-        df_results = df_results[cols]
-
-        setting_str = "_".join([str(x) for x in forecast_settings])
-        csv_path = f"TimeFuse/results_fuse_{mode_name}_{setting_str}.csv"
-        excel_path = f"TimeFuse/results_fuse_{mode_name}_{setting_str}.xlsx"
-
-        df_results.to_csv(csv_path, index=False)
-        print(f"Results saved to {csv_path}")
-
-        try:
-            df_results.to_excel(excel_path, index=False)
-            print(f"Results saved to {excel_path}")
-        except ImportError:
-            print("openpyxl not installed, skipping Excel save.")
-        except Exception as e:
-            print(f"Error saving to Excel: {e}")
-
-    process_and_save_results(few_shot_results, "fewshot")
-    process_and_save_results(zero_shot_results, "zeroshot")
+# [6] Save Final Combined Comparison Results
+save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list)

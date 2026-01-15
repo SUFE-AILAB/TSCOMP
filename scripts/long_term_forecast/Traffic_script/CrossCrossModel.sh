@@ -75,7 +75,8 @@ python3 -u run.py \
   --top_k 5 \
   --des 'Exp' \
   --batch_size 4 \
-  --itr 1
+  --itr 1 \
+  --use_multi_gpu
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -100,4 +101,5 @@ python3 -u run.py \
   --top_k 5 \
   --des 'Exp' \
   --batch_size 4 \
-  --itr 1
+  --itr 1 \
+  --use_multi_gpu

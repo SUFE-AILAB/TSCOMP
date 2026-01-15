@@ -1,10 +1,11 @@
 {
     "datasets": [
-      "ETTh1",
-      "ETTh2",
-      "ETTm1",
-      "ETTm2",
-      "weather"
+      "m4_hourly",
+      "m4_daily",
+      "m4_weekly",
+      "m4_monthly",
+      "m4_quarterly",
+      "m4_yearly"
     ],
     "models": [
       "DLinear",

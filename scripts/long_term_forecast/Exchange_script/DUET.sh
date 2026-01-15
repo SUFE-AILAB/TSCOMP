@@ -88,7 +88,6 @@ python3 -u run.py \
   --noisy_gating \
   --k $k \
   --CI \
-  --e_layers $e_layers \
   --d_layers 1 \
   --factor $factor \
   --enc_in 8 \
@@ -104,7 +103,9 @@ python3 -u run.py \
   --data_path exchange_rate.csv \
   --model_id Exchange_96_336 \
   --model $model_name \
-  --data cus$seq_len \
+  --data custom \
+  --features M \
+  --seq_len $seq_len \
   --label_len 48 \
   --pred_len 336 \
   --e_layers 1 \
@@ -124,9 +125,7 @@ python3 -u run.py \
   --moving_avg 25 \
   --lradj 'type1' \
   --batch_size $batch_size \
-  --learning_rate 5e-05
-  --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 5e-05 \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -134,7 +133,6 @@ python3 -u run.py \
   --noisy_gating \
   --k $k \
   --CI \
-  --e_layers $e_layers \
   --d_layers 1 \
   --factor $factor \
   --enc_in 8 \
@@ -150,7 +148,9 @@ python3 -u run.py \
   --data_path exchange_rate.csv \
   --model_id Exchange_96_720 \
   --model $model_name \
-  --data cus$seq_len \
+  --data custom \
+  --features M \
+  --seq_len $seq_len \
   --label_len 48 \
   --pred_len 720 \
   --e_layers 1 \
@@ -170,9 +170,7 @@ python3 -u run.py \
   --moving_avg 25 \
   --lradj 'type1' \
   --batch_size $batch_size \
-  --learning_rate 0.0001
-  --batch_size $batch_size \
-  --learning_rate $learning_rate  \
+  --learning_rate 0.0001 \
   --train_epochs 100 \
   --loss 'MAE' \
   --patience $patience \
@@ -180,7 +178,6 @@ python3 -u run.py \
   --noisy_gating \
   --k $k \
   --CI \
-  --e_layers $e_layers \
   --d_layers 1 \
   --factor $factor \
   --enc_in 8 \

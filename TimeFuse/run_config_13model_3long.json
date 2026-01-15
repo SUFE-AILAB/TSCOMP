@@ -1,0 +1,32 @@
+{
+    "datasets": [
+      "ili",
+      "nasdaq",
+      "nyse"
+    ],
+    "models": [
+      "DLinear",
+      "PatchTST",
+      "TimesNet",
+      "PAttn",
+      "TimeXer",
+      "iTransformer",
+      "FreTS",
+      "FEDformer",
+      "Nonstationary_Transformer",
+      "LightTS",
+      "Informer",
+      "Autoformer",
+      "TimeMixer"
+    ],
+    "forecast_settings": [
+      [36, 18, 24],
+            [36, 18, 36],
+            [36, 18, 48],
+            [36, 18, 60]
+    ],
+    "override_args": {
+        "use_gpu": true,
+        "gpu": 0
+    }
+  }

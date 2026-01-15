@@ -1,0 +1,37 @@
+{
+    "datasets": [
+      "ETTh1",
+      "ETTh2",
+      "ETTm1",
+      "ETTm2",
+      "weather",
+      "exchange",
+      "electricity",
+      "traffic"
+    ],
+    "models": [
+      "DLinear",
+      "PatchTST",
+      "TimesNet",
+      "PAttn",
+      "TimeXer",
+      "iTransformer",
+      "FreTS",
+      "FEDformer",
+      "Nonstationary_Transformer",
+      "LightTS",
+      "Informer",
+      "Autoformer",
+      "TimeMixer"
+    ],
+    "forecast_settings": [
+      [96, 48, 96],
+            [96, 48, 192],
+            [96, 48, 336],
+            [96, 48, 720]
+    ],
+    "override_args": {
+        "use_gpu": true,
+        "gpu": 0
+    }
+  }

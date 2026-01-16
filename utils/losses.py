@@ -306,7 +306,7 @@ class EMA(nn.Module):
     def forward(self, x):
         _, t, _ = x.shape
         powers = torch.flip(torch.arange(t, dtype=torch.double), dims=(0,))
-        weights = torch.pow((1 - self.alpha), powers).to("cuda")
+        weights = torch.pow((1 - self.alpha), powers).to(x.device)
         divisor = weights.clone()
         weights[1:] = weights[1:] * self.alpha
         weights = weights.reshape(1, t, 1)

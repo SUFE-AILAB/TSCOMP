@@ -262,7 +262,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             if isinstance(criterion, (mape_loss, mase_loss, smape_loss)):
                 loss = criterion(x.detach().cpu()[:, :, 0], self.args.frequency_map, pred[:, :, 0], true, batch_y_mark)
             else:
-                loss = criterion(pred[:, :, 0], true)
+                loss = criterion(pred[:, :, :0], true.unsqueeze(-1))
 
         self.model.train()
         return loss

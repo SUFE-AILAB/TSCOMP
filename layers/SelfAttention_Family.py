@@ -97,7 +97,7 @@ class ProbAttention(nn.Module):
         K_sample = K_expand[:, :, torch.arange(
             L_Q).unsqueeze(1), index_sample, :]
         Q_K_sample = torch.matmul(
-            Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze()
+            Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze(-2)
 
         # find the Top_k query with sparisty measurement
         M = Q_K_sample.max(-1)[0] - torch.div(Q_K_sample.sum(-1), L_K)
@@ -157,6 +157,9 @@ class ProbAttention(nn.Module):
                  np.ceil(np.log(L_K)).astype('int').item()  # c*ln(L_k)
         u = self.factor * \
             np.ceil(np.log(L_Q)).astype('int').item()  # c*ln(L_q)
+
+        U_part = max(1, U_part)
+        u = max(1, u)
 
         U_part = U_part if U_part < L_K else L_K
         u = u if u < L_Q else L_Q

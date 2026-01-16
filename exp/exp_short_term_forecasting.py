@@ -28,6 +28,12 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             self.args.seq_len = 2 * self.args.pred_len  # input_len = 2*pred_len
             self.args.label_len = self.args.pred_len
             self.args.frequency_map = M4Meta.frequency_map[self.args.seasonal_patterns]
+            if self.args.seasonal_patterns in ['Yearly', 'Monthly', 'Daily']:
+                self.args.n_period = 2
+            elif self.args.seasonal_patterns == 'Weekly':  
+                self.args.n_period = 1
+            else:
+                self.args.n_period = 3
 
         if 'Gym' not in self.args.model:
             model = self.model_dict[self.args.model].Model(self.args).float()

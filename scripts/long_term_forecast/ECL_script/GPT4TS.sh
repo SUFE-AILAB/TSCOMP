@@ -1,5 +1,3 @@
-export CUDA_VISIBLE_DEVICES=0
-
 seq_len=512
 model=GPT4TS
 
@@ -31,5 +29,6 @@ python run.py \
     --itr 1 \
     --model $model \
     --is_gpt 1 \
+    --devices 0,1 \
     --use_multi_gpu
 done

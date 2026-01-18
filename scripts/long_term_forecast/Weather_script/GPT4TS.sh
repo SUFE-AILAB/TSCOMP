@@ -1,4 +1,3 @@
-export CUDA_VISIBLE_DEVICES=0
 
 seq_len=512
 model=GPT4TS

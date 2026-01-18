@@ -27,29 +27,7 @@ import numpy as np
 import pandas as pd
 import time
 import tqdm
-
-# [1] Load Experiment Configs
 import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument('--config', type=str, default='TimeFuse/run_config.json', help='Path to run config json')
-parser.add_argument('--desc', type=str, default='combined', help='Description for output file suffix')
-main_args = parser.parse_args()
-
-# load the TimeFuse exp configs
-run_configs = load_run_config(main_args.config, verbose=True)
-
-# load the base model exp args (used for TSLib models) for base model train and inference
-all_exp_args = get_all_exp_args(
-    datasets=run_configs["datasets"],
-    models=run_configs["models"],
-    forecast_settings="auto", # auto load from scripts to retrieve real seq_len/label_len for each model
-    override_args=run_configs["override_args"],
-    base_config_path="scripts/long_term_forecast/",
-    run_sota_path="run_sota.py",
-    verbose=True,
-)
-
-# print(all_exp_args)
 
 def get_config_by_pred_len(all_exp_args, dataset_name, model_name, pred_len):
     """
@@ -79,30 +57,6 @@ def get_config_by_pred_len(all_exp_args, dataset_name, model_name, pred_len):
     # Sort by seq_len descending to pick the one with most history (or just consistent determinism)
     candidates.sort(key=lambda x: x.seq_len, reverse=True)
     return candidates[0]
-
-
-# [2] Base Model Training
-
-for exp_name, args in all_exp_args.items():
-    setting = setting_generator(args, 0)
-    exp = Exp_Fuse_Forecasting(args)
-    print(f"[Device: {exp.device}] Base model training {setting}")
-    model, vali_loss, test_loss = exp.train(
-        setting=setting,
-        verbose=False,
-        tqdm_disable=False,
-        save_model=True,
-        override_saved_model=False,
-        raise_fwd_error=True,
-    )
-
-
-# # [3] Meta-training Data Extraction
-# Define model specific parameters here if needed
-model_specific_params = {
-    # "DLinear": {"seq_len": 96, "label_len": 48},
-    # "LightTS": {"seq_len": 24, "label_len": 12},
-}
 
 def extract_input_meta_feats(
     run_configs,
@@ -175,7 +129,6 @@ def extract_input_meta_feats(
     )
     return
 
-
 def extract_output_pred_true(
     run_configs,
     dataset_name,
@@ -215,16 +168,6 @@ def extract_output_pred_true(
         # This retrieves the correct seq_len/label_len automatically from all_exp_args
         # (which was populated via "auto" mode from scripts)
         args = get_config_by_pred_len(all_exp_args, dataset_name, model_name, pred_len)
-
-        if args is None:
-            # Try fallback to model_specific_params if defined (as legacy/manual override)
-            if model_specific_params and model_name in model_specific_params:
-                spec = model_specific_params[model_name]
-                s = spec.get("seq_len", seq_len)
-                l = spec.get("label_len", label_len)
-                key = f"{dataset_name}_{model_name}_{s}_{l}_{pred_len}"
-                if key in all_exp_args:
-                    args = all_exp_args[key]
 
         if args is None:
             print(f"Skipping {model_name} (no config found for dataset={dataset_name} pred_len={pred_len})")
@@ -295,37 +238,7 @@ def extract_output_pred_true(
     )
     return
 
-
-split_names = ["val", "test"]
-meta_train_root = f"TimeFuse/meta_data_{main_args.desc}"
-
-for dataset_name in run_configs["datasets"]:
-    for seq_len, label_len, pred_len in run_configs["forecast_settings"]:
-        for split_name in split_names:
-            # Extract input temporal meta feature
-            extract_input_meta_feats(
-                run_configs=run_configs,
-                all_exp_args=all_exp_args,
-                meta_train_root=meta_train_root,
-                dataset_name=dataset_name,
-                split_name=split_name,
-                seq_len=seq_len,
-                force_override=False,
-            )
-
-            # Extract and save model predictions & ground truth
-            extract_output_pred_true(
-                run_configs=run_configs,
-                dataset_name=dataset_name,
-                meta_train_root=meta_train_root,
-                split_name=split_name,
-                seq_len=seq_len,
-                label_len=label_len,
-                pred_len=pred_len,
-                force_override=True,
-            )
-
-def save_final_comparison(few_shot_list, zero_shot_list, desc_suffix=main_args.desc):
+def save_final_comparison(few_shot_list, zero_shot_list, desc_suffix):
     if not few_shot_list or not zero_shot_list:
         print("Missing results for one mode, skipping comparison save.")
         if few_shot_list:
@@ -454,221 +367,298 @@ def save_final_comparison(few_shot_list, zero_shot_list, desc_suffix=main_args.d
     except Exception as e:
         print(f"Error saving Excel: {e}")
 
-
-# [4] TimeFuse: Fusor training and evaluation
-random_seed = 42
-n_epochs = 5  # meta training epochs
-batch_size = 64  # meta batch size
-learning_rate = 0.0005  # fusor learning rate
-num_workers = 1
-gpu_id = 0  # the gpu id to use for meta training
-device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
-
-print("Zero-shot setting enabled for TimeFuse meta-training and evaluation.")
-experiments_list = [
-    ("All",
-        [f"{dataname}_val" for dataname in run_configs["datasets"]],
-        [f"{dataname}_test" for dataname in run_configs["datasets"]])
-]
-
-# Zero-shot setting: Train on all except target, test on target
-print("Zero-shot setting enabled. Performing Leave-One-Out evaluation.")
-# experiments_list = []
-for target_dataset in run_configs["datasets"]:
-    meta_train_data_names = [f"{d}_val" for d in run_configs["datasets"] if d != target_dataset]
-    meta_test_data_names = [f"{target_dataset}_test"]
-    experiments_list.append((target_dataset, meta_train_data_names, meta_test_data_names))
-
-dim_meta_feats = 22  # fusor input dim
-dim_model_weights = len(
-    run_configs["models"]
-)  # fusor output dim, i.e., number of models
-
-# Outer loop: iterate over forecast settings (e.g., varying horizons)
-from utils.metrics import metric, ALL_METRICS
-
-# Store all results across different forecast settings
-all_few_shot_results_list = []
-all_zero_shot_results_list = []
-
-for forecast_settings in run_configs["forecast_settings"]:
-    print(f"\n////// Forecast: {forecast_settings} //////\n")
-    training_step = forecast_settings[2]
-
-    few_shot_results = {}
-    zero_shot_results = {}
+if __name__ == "__main__":
+    # [1] Load Experiment Configs
     
-    # Inner loop: iterate over zero-shot experiments (or single experiment if not zero-shot)
-    for exp_i, (target_name, meta_train_data_names, meta_test_data_names) in enumerate(experiments_list):
-        print(f"\n---- Experiment {exp_i + 1}/{len(experiments_list)}: Target = {target_name} ----\n")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='TimeFuse/run_config.json', help='Path to run config json')
+    parser.add_argument('--desc', type=str, default='combined', help='Description for output file suffix')
+    parser.add_argument('--no_force_override_output', action='store_false', help='Do not force override output files', default=True)
+    main_args = parser.parse_args()
 
-        random.seed(random_seed)
-        torch.manual_seed(random_seed)
-        np.random.seed(random_seed)
+    # load the TimeFuse exp configs
+    run_configs = load_run_config(main_args.config, verbose=True)
 
-        # Initialize model and optimizer FRESH for each experiment
-        fusor = ModelFusor(input_dim=dim_meta_feats, output_dim=dim_model_weights)
-        fusor.to(device)
-        optimizer = optim.Adam(fusor.parameters(), lr=learning_rate)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-        criterion = nn.SmoothL1Loss(beta=0.01)
+    # load the base model exp args (used for TSLib models) for base model train and inference
+    all_exp_args = get_all_exp_args(
+        datasets=run_configs["datasets"],
+        models=run_configs["models"],
+        forecast_settings="auto", # auto load from scripts to retrieve real seq_len/label_len for each model
+        override_args=run_configs["override_args"],
+        base_config_path="scripts/long_term_forecast/",
+        run_sota_path="run_sota.py",
+        verbose=True,
+    )
 
-        print(
-            f" TIMEFUSE Meta Training Config ".center(50, "=") + "\n"
-            f"loss={criterion}, dim_meta_feats={dim_meta_feats}, dim_model_weights={dim_model_weights}\n"
-            f"n_epochs={n_epochs}, batch_size={batch_size}, learning_rate={learning_rate}, device={device}\n"
-        )
-        
-        # Initialize data loaders and datasets
-        dataload_kwargs = {
-            "forecast_setting": forecast_settings,
-            "subset_seed": random_seed,
-            "num_workers": num_workers,
-        }
-        meta_train_datasets, meta_train_loaders = get_datasets_and_loaders(
-            meta_train_data_names,
-            batch_size=batch_size,
-            shuffle=True,
-            **dataload_kwargs,
-        )
-        meta_test_datasets, meta_test_loaders = get_datasets_and_loaders(
-            meta_test_data_names,
-            batch_size=512,
-            shuffle=False,
-            **dataload_kwargs,
-        )
-        
-        # Get aligned length loaders
-        aligned_train_loaders = get_length_aligned_loaders(
-            meta_train_datasets,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers,
+    # print(all_exp_args)
+
+
+    # [2] Base Model Training
+    for exp_name, args in all_exp_args.items():
+        setting = setting_generator(args, 0)
+        if args.use_gpu and args.use_multi_gpu:
+            args.devices = args.devices.replace(' ', '')
+            device_ids = args.devices.split(',')
+            args.device_ids = [int(id_) for id_ in device_ids]
+            args.gpu = args.device_ids[0]
+        print(f"Base model training {setting}")
+        exp = Exp_Fuse_Forecasting(args)
+        print(f"[Device: {exp.device}]")
+        model, vali_loss, test_loss = exp.train(
+            setting=setting,
+            verbose=False,
+            tqdm_disable=False,
+            save_model=True,
+            override_saved_model=False,
+            raise_fwd_error=True,
         )
 
-        n_batch = max([len(loader) for loader in aligned_train_loaders.values()])
 
-        # Baseline model scores for comparison
-        model_scores = {}
-        for data_name, meta_dataset in meta_test_datasets.items():
-            model_preds = meta_dataset.y_model_preds
-            true = meta_dataset.y_true
-            model_scores[data_name] = {}
-            for model_id, model_name in enumerate(run_configs["models"]):
-                model_score = metric(
-                    pred=model_preds[:, model_id, :, :],
-                    true=true,
-                    return_dict=True,
+    # # [3] Meta-training Data Extraction
+
+    split_names = ["val", "test"]
+    meta_train_root = f"TimeFuse/meta_data_{main_args.desc}"
+
+    for dataset_name in run_configs["datasets"]:
+        for seq_len, label_len, pred_len in run_configs["forecast_settings"]:
+            for split_name in split_names:
+                # Extract input temporal meta feature
+                extract_input_meta_feats(
+                    run_configs=run_configs,
+                    all_exp_args=all_exp_args,
+                    meta_train_root=meta_train_root,
+                    dataset_name=dataset_name,
+                    split_name=split_name,
+                    seq_len=seq_len,
+                    force_override=False,
                 )
-                model_scores[data_name][model_name] = model_score
+
+                # Extract and save model predictions & ground truth
+                extract_output_pred_true(
+                    run_configs=run_configs,
+                    dataset_name=dataset_name,
+                    meta_train_root=meta_train_root,
+                    split_name=split_name,
+                    seq_len=seq_len,
+                    label_len=label_len,
+                    pred_len=pred_len,
+                    force_override=main_args.no_force_override_output,
+                )
+
+
+    # [4] TimeFuse: Fusor training and evaluation
+    random_seed = 42
+    n_epochs = 5  # meta training epochs
+    batch_size = 64  # meta batch size
+    learning_rate = 0.0005  # fusor learning rate
+    num_workers = 1
+    gpu_id = 0  # the gpu id to use for meta training
+    device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+
+    experiments_list = [
+        ("All",
+            [f"{dataname}_val" for dataname in run_configs["datasets"]],
+            [f"{dataname}_test" for dataname in run_configs["datasets"]])
+    ]
+
+    # Zero-shot setting: Train on all except target, test on target
+    # experiments_list = []
+    for target_dataset in run_configs["datasets"]:
+        meta_train_data_names = [f"{d}_val" for d in run_configs["datasets"] if d != target_dataset]
+        meta_test_data_names = [f"{target_dataset}_test"]
+        experiments_list.append((target_dataset, meta_train_data_names, meta_test_data_names))
+
+    dim_meta_feats = 22  # fusor input dim
+    dim_model_weights = len(
+        run_configs["models"]
+    )  # fusor output dim, i.e., number of models
+
+    # Outer loop: iterate over forecast settings (e.g., varying horizons)
+    from utils.metrics import metric, ALL_METRICS
+
+    # Store all results across different forecast settings
+    all_few_shot_results_list = []
+    all_zero_shot_results_list = []
+
+    for forecast_settings in run_configs["forecast_settings"]:
+        print(f"\n////// Forecast: {forecast_settings} //////\n")
+        training_step = forecast_settings[2]
+
+        few_shot_results = {}
+        zero_shot_results = {}
         
-        test_best_single_perf = {}
-        for data_name, data_scores in model_scores.items():
-            test_best_single_perf[data_name] = {}
-            for metric_name in ALL_METRICS:
-                scores = [v[metric_name] for k, v in data_scores.items()]
-                best_score = min(scores)
-                test_best_single_perf[data_name][metric_name] = best_score
-        
-        # Fit scaler on meta-train data
-        start_time = time.time()
-        print("Fitting the scaler for the meta-features ... ", end="")
-        scaler = get_scaler("standard")
-        all_meta_x = np.concatenate(
-            [dataset.x_meta for dataset in meta_train_datasets.values()]
-        )
-        scaler.fit(all_meta_x)
-        print(f"done in {time.time() - start_time:.2f}s")
-        
-        # Training Loop
-        for i_epoch in range(n_epochs):
-            fusor.train()
-            
-             # turn loaders into iterators
-            meta_train_iterators = {
-                data_name: iter(aligned_train_loaders[data_name])
-                for data_name in meta_train_data_names
-            }
-            
-            iterator = tqdm.tqdm(
-                range(n_batch),
-                total=n_batch,
-                desc=f"Ep {i_epoch + 1}/{n_epochs} | meta-train ",
-                leave=False
+        # Inner loop: iterate over zero-shot experiments (or single experiment if not zero-shot)
+        for exp_i, (target_name, meta_train_data_names, meta_test_data_names) in enumerate(experiments_list):
+            print(f"\n---- Experiment {exp_i + 1}/{len(experiments_list)}: Target = {target_name} ----\n")
+
+            random.seed(random_seed)
+            torch.manual_seed(random_seed)
+            np.random.seed(random_seed)
+
+            # Initialize model and optimizer FRESH for each experiment
+            fusor = ModelFusor(input_dim=dim_meta_feats, output_dim=dim_model_weights)
+            fusor.to(device)
+            optimizer = optim.Adam(fusor.parameters(), lr=learning_rate)
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+            criterion = nn.SmoothL1Loss(beta=0.01)
+
+            print(
+                f" TIMEFUSE Meta Training Config ".center(50, "=") + "\n"
+                f"loss={criterion}, dim_meta_feats={dim_meta_feats}, dim_model_weights={dim_model_weights}\n"
+                f"n_epochs={n_epochs}, batch_size={batch_size}, learning_rate={learning_rate}, device={device}\n"
             )
             
-            # Use training logic similar to original but inside this loop
-            for i_batch in iterator:
-                for train_name, meta_loader in meta_train_iterators.items():
-                    try:
-                        x_meta, y_model_preds, y_true = next(meta_loader)
-                    except StopIteration:
-                        continue 
-
-                    x_meta = scaler.transform(x_meta).float().to(device)
-                    y_model_preds = y_model_preds.float().to(device)
-                    y_true = y_true.float().to(device)
-                    
-                    weights = fusor(x_meta)
-                    weights = weights.unsqueeze(-1).unsqueeze(-1)
-                    
-                    weighted_preds = weights * y_model_preds
-                    fused_output = torch.sum(weighted_preds, dim=1)
-                    
-                    loss = criterion(fused_output, y_true)
-                    train_loss = criterion(fused_output[:, :training_step], y_true[:, :training_step])
-                    
-                    optimizer.zero_grad()
-                    train_loss.backward()
-                    optimizer.step()
+            # Initialize data loaders and datasets
+            dataload_kwargs = {
+                "forecast_setting": forecast_settings,
+                "subset_seed": random_seed,
+                "num_workers": num_workers,
+                "root": meta_train_root + '/'
+            }
+            meta_train_datasets, meta_train_loaders = get_datasets_and_loaders(
+                meta_train_data_names,
+                batch_size=batch_size,
+                shuffle=True,
+                **dataload_kwargs,
+            )
+            meta_test_datasets, meta_test_loaders = get_datasets_and_loaders(
+                meta_test_data_names,
+                batch_size=512,
+                shuffle=False,
+                **dataload_kwargs,
+            )
             
-            scheduler.step()
-            
-        # Evaluation
-        meta_test_scores, _ = test_fusor(
-            fusor,
-            scaler,
-            meta_test_loaders,
-            device,
-        )
-        
-        # Integrate and Save results immediately
-        metrics = ["mse", "mae"]
-        current_pl = forecast_settings[2] # seq_len, label_len, pred_len
+            # Get aligned length loaders
+            aligned_train_loaders = get_length_aligned_loaders(
+                meta_train_datasets,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=num_workers,
+            )
 
-        for data_name in model_scores.keys():
-            model_scores[data_name]["TimeFuse (Ours)"] = meta_test_scores[data_name]
-            
-            # Select target list for storage
-            if target_name == "All":
-                target_list = all_few_shot_results_list
-            else:
-                target_list = all_zero_shot_results_list
+            n_batch = max([len(loader) for loader in aligned_train_loaders.values()])
 
-            # Create rows for this dataset
-            data_scores = model_scores[data_name]
-            for metric_name in metrics:
-                row = {
-                    "Dataset": data_name, 
-                    "Pred_Len": current_pl,
-                    "Metric": metric_name.upper()
+            # Baseline model scores for comparison
+            model_scores = {}
+            for data_name, meta_dataset in meta_test_datasets.items():
+                model_preds = meta_dataset.y_model_preds
+                true = meta_dataset.y_true
+                model_scores[data_name] = {}
+                for model_id, model_name in enumerate(run_configs["models"]):
+                    model_score = metric(
+                        pred=model_preds[:, model_id, :, :],
+                        true=true,
+                        return_dict=True,
+                    )
+                    model_scores[data_name][model_name] = model_score
+            
+            test_best_single_perf = {}
+            for data_name, data_scores in model_scores.items():
+                test_best_single_perf[data_name] = {}
+                for metric_name in ALL_METRICS:
+                    scores = [v[metric_name] for k, v in data_scores.items()]
+                    best_score = min(scores)
+                    test_best_single_perf[data_name][metric_name] = best_score
+            
+            # Fit scaler on meta-train data
+            start_time = time.time()
+            print("Fitting the scaler for the meta-features ... ", end="")
+            scaler = get_scaler("standard")
+            all_meta_x = np.concatenate(
+                [dataset.x_meta for dataset in meta_train_datasets.values()]
+            )
+            scaler.fit(all_meta_x)
+            print(f"done in {time.time() - start_time:.2f}s")
+            
+            # Training Loop
+            for i_epoch in range(n_epochs):
+                fusor.train()
+                
+                # turn loaders into iterators
+                meta_train_iterators = {
+                    data_name: iter(aligned_train_loaders[data_name])
+                    for data_name in meta_train_data_names
                 }
-                for model_name in run_configs["models"]: # Ensure consistency
-                    if model_name in data_scores:
-                        row[model_name] = data_scores[model_name][metric_name]
-                    else:
-                        row[model_name] = float('inf')
-                # Add TimeFuse
-                if "TimeFuse (Ours)" in data_scores:
-                     row["TimeFuse (Ours)"] = data_scores["TimeFuse (Ours)"][metric_name]
-                else:
-                     row["TimeFuse (Ours)"] = float('inf')
-                     
-                target_list.append(row)
-        
-        # Save results immediately
-        print("Saving intermediate results...")
-        save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list)
+                
+                iterator = tqdm.tqdm(
+                    range(n_batch),
+                    total=n_batch,
+                    desc=f"Ep {i_epoch + 1}/{n_epochs} | meta-train ",
+                    leave=False
+                )
+                
+                # Use training logic similar to original but inside this loop
+                for i_batch in iterator:
+                    for train_name, meta_loader in meta_train_iterators.items():
+                        try:
+                            x_meta, y_model_preds, y_true = next(meta_loader)
+                        except StopIteration:
+                            continue 
 
-# [6] Save Final Combined Comparison Results
-save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list)
+                        x_meta = scaler.transform(x_meta).float().to(device)
+                        y_model_preds = y_model_preds.float().to(device)
+                        y_true = y_true.float().to(device)
+                        
+                        weights = fusor(x_meta)
+                        weights = weights.unsqueeze(-1).unsqueeze(-1)
+                        
+                        weighted_preds = weights * y_model_preds
+                        fused_output = torch.sum(weighted_preds, dim=1)
+                        
+                        loss = criterion(fused_output, y_true)
+                        train_loss = criterion(fused_output[:, :training_step], y_true[:, :training_step])
+                        
+                        optimizer.zero_grad()
+                        train_loss.backward()
+                        optimizer.step()
+                
+                scheduler.step()
+                
+            # Evaluation
+            meta_test_scores, _ = test_fusor(
+                fusor,
+                scaler,
+                meta_test_loaders,
+                device,
+            )
+            
+            # Integrate and Save results immediately
+            metrics = ["mse", "mae"]
+            current_pl = forecast_settings[2] # seq_len, label_len, pred_len
+
+            for data_name in model_scores.keys():
+                model_scores[data_name]["TimeFuse (Ours)"] = meta_test_scores[data_name]
+                
+                # Select target list for storage
+                if target_name == "All":
+                    target_list = all_few_shot_results_list
+                else:
+                    target_list = all_zero_shot_results_list
+
+                # Create rows for this dataset
+                data_scores = model_scores[data_name]
+                for metric_name in metrics:
+                    row = {
+                        "Dataset": data_name, 
+                        "Pred_Len": current_pl,
+                        "Metric": metric_name.upper()
+                    }
+                    for model_name in run_configs["models"]: # Ensure consistency
+                        if model_name in data_scores:
+                            row[model_name] = data_scores[model_name][metric_name]
+                        else:
+                            row[model_name] = float('inf')
+                    # Add TimeFuse
+                    if "TimeFuse (Ours)" in data_scores:
+                        row["TimeFuse (Ours)"] = data_scores["TimeFuse (Ours)"][metric_name]
+                    else:
+                        row["TimeFuse (Ours)"] = float('inf')
+                        
+                    target_list.append(row)
+            
+            # Save results immediately
+            print("Saving intermediate results...")
+            save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list, desc_suffix=main_args.desc)
+
+    # [6] Save Final Combined Comparison Results
+    save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list, desc_suffix=main_args.desc)

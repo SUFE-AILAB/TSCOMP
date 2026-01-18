@@ -14,6 +14,11 @@ import numpy as np
 import pandas as pd
 from utils.dtw_metric import dtw, accelerated_dtw
 from TimeFuse.meta_feature import batch_extract_meta_features
+from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
+    Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
+    Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, \
+        TimeXer, DUET, GPT4TS, RAFT, CrossCrossModel, OLinear
+from models import TSGym
 
 warnings.filterwarnings("ignore")
 
@@ -22,8 +27,66 @@ from torch.utils.data import DataLoader
 
 class Exp_Fuse_Forecasting(Exp_Basic):
     def __init__(self, args):
-        super(Exp_Fuse_Forecasting, self).__init__(args)
-        
+        self.args = args
+        self.model_dict = {
+            'TimesNet': TimesNet,
+            'Autoformer': Autoformer,
+            'Transformer': Transformer,
+            'Nonstationary_Transformer': Nonstationary_Transformer,
+            'DLinear': DLinear,
+            'FEDformer': FEDformer,
+            'Informer': Informer,
+            'LightTS': LightTS,
+            'Reformer': Reformer,
+            'ETSformer': ETSformer,
+            'PatchTST': PatchTST,
+            'Pyraformer': Pyraformer,
+            'MICN': MICN,
+            'Crossformer': Crossformer,
+            'FiLM': FiLM,
+            'iTransformer': iTransformer,
+            'Koopa': Koopa,
+            'TiDE': TiDE,
+            'FreTS': FreTS,
+            'MambaSimple': MambaSimple,
+            'TimeMixer': TimeMixer,
+            'TSMixer': TSMixer,
+            'SegRNN': SegRNN,
+            'TemporalFusionTransformer': TemporalFusionTransformer,
+            "SCINet": SCINet,
+            'PAttn': PAttn,
+            'TimeXer': TimeXer,
+            'TSGym': TSGym,
+            'DUET': DUET,
+            'GPT4TS':GPT4TS,
+            'RAFT': RAFT,
+            'CrossCrossModel': CrossCrossModel,
+            'OLinear': OLinear
+        }
+        if args.model == 'Mamba':
+            print('Please make sure you have successfully installed mamba_ssm')
+            from models import Mamba
+            self.model_dict['Mamba'] = Mamba
+
+        self.device = self._acquire_device()
+        self.model = self._build_model().to(self.device)
+        # self._model_configuration()
+    
+    def _acquire_device(self):
+        if self.args.use_gpu:
+            # Only set CUDA_VISIBLE_DEVICES if not already set, to respect external control (e.g. nohup ... &)
+            if "CUDA_VISIBLE_DEVICES" not in os.environ:
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(
+                    self.args.gpu) if not self.args.use_multi_gpu else self.args.devices
+            # device = torch.device('cuda:{}'.format(self.args.gpu))
+            # print('Use GPU: cuda:{}'.format(self.args.gpu))
+            device = torch.device('cuda')
+            # print('Use GPU: cuda:{}'.format(self.args.devices))
+        else:
+            device = torch.device('cpu')
+            # print('Use CPU')
+        return device
+    
     def _build_model(self):
         if 'Gym' not in self.args.model:
             model = self.model_dict[self.args.model].Model(self.args).float()
@@ -48,9 +111,6 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                                                       gym_rag=gym_rag).float()
             self.save_suffix = 'Gym'
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
-
         if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
             self.args.use_rag = True
             train_data, _ = self._get_data(flag='train')
@@ -65,6 +125,14 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                     if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
 
             model.prepare_dataset(train_data, vali_data, test_data)
+
+        if self.args.use_multi_gpu and self.args.use_gpu:
+            # Adjust device_ids to actual available devices
+            effective_device_count = torch.cuda.device_count()
+            if len(self.args.device_ids) > effective_device_count:
+                print(f"Warning: Requested {len(self.args.device_ids)} devices but only {effective_device_count} are available.")
+                self.args.device_ids = list(range(effective_device_count))
+            model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
         return model
 
     def _get_data(
@@ -81,6 +149,22 @@ class Exp_Fuse_Forecasting(Exp_Basic):
     def _select_criterion(self):
         criterion = nn.MSELoss()
         return criterion
+    
+    def _load_state_dict(self, path):
+        # Handle DataParallel module. prefix mismatch
+        state_dict = torch.load(path, map_location=self.device)
+        is_model_parallel = isinstance(self.model, nn.DataParallel)
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if is_model_parallel and not k.startswith('module.'):
+                # Model is parallel but ckpt is not - Add prefix
+                new_state_dict['module.' + k] = v
+            elif not is_model_parallel and k.startswith('module.'):
+                # Model is single but ckpt is parallel - Remove prefix
+                new_state_dict[k[7:]] = v
+            else:
+                new_state_dict[k] = v
+        self.model.load_state_dict(new_state_dict)
 
     def train(
         self,
@@ -109,12 +193,7 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                     f"[Base Model Train] Model already trained, loading from {path} | "
                     f"Set override_saved_model=True to train and override."
                 )
-                self.model.load_state_dict(
-                    torch.load(
-                        best_model_path2,
-                        map_location=self.device,
-                    )
-                )
+                self._load_state_dict(best_model_path2)
                 return self.model, 0, 0
         else:
             if os.path.exists(best_model_path1):
@@ -125,14 +204,11 @@ class Exp_Fuse_Forecasting(Exp_Basic):
                         f"[Base Model Train] Model already trained, loading from {path} | "
                         f"Set override_saved_model=True to train and override."
                     )
-                    self.model.load_state_dict(
-                        torch.load(
-                            best_model_path1,
-                            map_location=self.device,
-                        )
-                    )
+                    self._load_state_dict(best_model_path1)
                     return self.model, 0, 0
-        raise NotImplementedError("Training from scratch is not supported for Fuse Forecasting.")
+        # raise NotImplementedError("Training from scratch is not supported for Fuse Forecasting.")
+        print("Training from scratch is not supported for Fuse Forecasting.")
+        return self.model, 0, 0
 
         time_now = time.time()
 
@@ -391,25 +467,25 @@ class Exp_Fuse_Forecasting(Exp_Basic):
         if load_saved_model:
             if verbose:
                 print(f"loading saved model from {setting}")
+
+            path = os.path.join(f'{self.args.checkpoints}{self.save_suffix}/', setting)
+            best_model_path1 = path + '/' + f'checkpoint.pth'
+            best_model_path2 = path + '/' + f'{self.args.data_path.replace(".csv","")}_checkpoint.pth'
+            if os.path.exists(best_model_path2):
+                model_path = best_model_path2
+            else:
+                model_path = best_model_path1
+                
             try:    
                 self.model.load_state_dict(
-                    torch.load(
-                        os.path.join(
-                            "./checkpoints/" + setting,
-                            f'{self.args.data_path.replace(".csv","")}_checkpoint.pth',
-                        ),
-                        map_location=self.device,
-                    )
+                    torch.load(model_path, map_location=self.device)
                 )
             except FileNotFoundError:
                 self.model.load_state_dict(
-                    torch.load(
-                        os.path.join(
-                            "./checkpoints/" + setting,
-                            "checkpoint.pth",
-                        ),
+                    torch.load(self._load_state_dict(model_path)))
+            except FileNotFoundError:
+                self._load_state_dict(model_path,
                         map_location=self.device,
-                    )
                 )
                 print("Loaded checkpoint.pth instead of dataset specific checkpoint.")
 

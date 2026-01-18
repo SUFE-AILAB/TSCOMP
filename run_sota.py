@@ -12,7 +12,7 @@ def run_task(task_command, task_id):
     except subprocess.CalledProcessError as e:
         print(f"\nError executing task {task_id}: \n{e}", flush=True)
 
-def create_task_list(param_devices, env, dataset, singlemodel=None):
+def create_task_list(param_devices, env, dataset, singlemodel=None, verbose=False):
     # https://decisionintelligence.github.io/OpenTS/datasets/#Multivariate-time-series
     # Prepare the cleaned data from the OCR result
     data=[
@@ -140,8 +140,9 @@ def create_task_list(param_devices, env, dataset, singlemodel=None):
             if is_trained and model_name != 'Koopa':
                 # print(f"Skipping trained model: {model_name} on {data_model_id}") # 可选：打印跳过信息
                 continue
-
-            print(model_name, data_model_id)
+            
+            if verbose:  
+                print(model_name, data_model_id)
                 
             # 不同数据对应不同的data，以及不同的root_path、data_path
             if 'ETT' in data_name:
@@ -376,8 +377,11 @@ def create_task_list(param_devices, env, dataset, singlemodel=None):
                             learning_rate=0.01
                     
                     expand_str = ""
-                    if model_name == 'TiDE' and pred_len == 720:
+                    if data_model_id == 'traffic' and model_name == 'TiDE':
                         batch_size = 4
+                        expand_str = "\
+                        --use_multi_gpu"
+                    if data_model_id in ['ECL'] and model_name == 'TiDE':
                         expand_str = "\
                         --use_multi_gpu"
                     if model_name == 'OLinear':
@@ -433,9 +437,10 @@ def main():
     parser.add_argument('--processes_num', type=int, default=1, help='processes')
     parser.add_argument('--env', type=str, default='mqenv', help='env')
     parser.add_argument('--singlemodel', type=str, default=None, help='model')
+    parser.add_argument('--verbose', type=bool, default=False, help='model')
     args = parser.parse_args()
     
-    task_list = create_task_list(args.devices, args.env, args.dataset, args.singlemodel)
+    task_list = create_task_list(args.devices, args.env, args.dataset, args.singlemodel, args.verbose)
 
     # 使用 multiprocessing.Pool 来并行运行任务
     with Pool(processes=args.processes_num) as pool:  # 设置进程池的大小（例如5个并行进程）

@@ -31,6 +31,7 @@ python run.py \
     --itr 1 \
     --model $model \
     --pretrain 1 \
-    --is_gpt 1
+    --is_gpt 1 \
+    --use_multi_gpu
 
 done

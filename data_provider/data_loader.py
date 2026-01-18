@@ -21,10 +21,10 @@ def _acquire_device(args):
         # device = torch.device('cuda:{}'.format(self.args.gpu))
         # print('Use GPU: cuda:{}'.format(self.args.gpu))
         device = torch.device('cuda')
-        print('Use GPU: cuda:{}'.format(args.devices))
+        # print('Use GPU: cuda:{}'.format(args.devices))
     else:
         device = torch.device('cpu')
-        print('Use CPU')
+        # print('Use CPU')
     return device
 
 class Dataset_ETT_hour(Dataset):

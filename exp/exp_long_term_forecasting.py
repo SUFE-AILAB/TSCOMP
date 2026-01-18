@@ -432,5 +432,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         
         if self.args.save_cpk and os.path.exists(checkpoint_path):
             shutil.rmtree(checkpoint_path)
+            print("Removed checkpoint directory to save space.")
 
         return "\n".join(test_results)

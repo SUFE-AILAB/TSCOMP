@@ -123,9 +123,11 @@ class PSLoss(nn.Module):
         true_fft = torch.fft.rfft(true, dim=1)
         frequency_list = torch.abs(true_fft).mean(0).mean(-1)
         frequency_list[:1] = 0.0
-        top_index = torch.argmax(frequency_list)
+        top_index = torch.argmax(frequency_list).item()
+        top_index = max(1, top_index)
         period = (true.shape[1] // top_index)
         patch_len = min(period // 2, self.patch_len_threshold)
+        patch_len = max(2, int(patch_len))
         stride = patch_len // 2
         
         # Patching

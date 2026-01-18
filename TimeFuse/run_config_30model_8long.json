@@ -39,7 +39,6 @@
       "RAFT", 
       "GPT4TS", 
       "OLinear", 
-      "CrossCrossModel",
       "Mamba"
     ],
     "forecast_settings": [

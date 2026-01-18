@@ -4,7 +4,7 @@ import os
 import re
 
 # 找到SOTA的结果
-BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear', 'CrossCrossModel']
+BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear']#, 'CrossCrossModel'
 BASELINE_LIST += ['DUET','TimeMixer','MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','Autoformer','SegRNN','Mamba', 'iTransformer', 'TimeXer', 
                       'PAttn', 'Koopa','TSMixer', 'FreTS',  'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS', 'Informer', 'Transformer', 'Reformer']
 BASELINE_LIST +=  ['FiLM','TiDE']#, 'TemporalFusionTransformer'

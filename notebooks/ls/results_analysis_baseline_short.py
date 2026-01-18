@@ -133,6 +133,11 @@ def main():
     root_results_dir = os.path.join('results_short_term_forecasting/results/m4/')
     dataset_path = os.path.join('dataset/m4')
 
+    BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear']#, 'CrossCrossModel'
+    BASELINE_LIST += ['DUET','TimeMixer','MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','Autoformer','SegRNN','Mamba', 'iTransformer', 'TimeXer', 
+                          'PAttn', 'Koopa','TSMixer', 'FreTS',  'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS', 'Informer', 'Transformer', 'Reformer']
+    BASELINE_LIST +=  ['FiLM','TiDE']
+
     if not os.path.exists(root_results_dir):
         print(f"Results dir not found: {root_results_dir}")
         return
@@ -155,7 +160,7 @@ def main():
             if parts[0] == 'STF':
                 # Special case handling for Nonstationary_Transformer
                 if len(parts) > 2 and parts[1] == 'Nonstationary' and parts[2] == 'Transformer':
-                    model_name = 'Nonstationary_Transformer'
+                    model_name = 'Nonstationary'
                 else:
                     model_name = parts[1]
             else:
@@ -164,6 +169,9 @@ def main():
                 else:
                     continue
         except:
+            continue
+        
+        if model_name not in BASELINE_LIST:
             continue
             
         folder_full_path = os.path.join(root_results_dir, folder)

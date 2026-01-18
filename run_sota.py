@@ -119,7 +119,7 @@ def create_task_list(param_devices, env, dataset, singlemodel=None, verbose=Fals
                             'Crossformer','TimeMixer', 'Nonstationary_Transformer', 'FiLM', 'ETSformer',
                             'TSMixer', 'TimeXer', 'iTransformer', 'Informer', 'FreTS', 
                             'SCINet', 'PAttn','TiDE' , 'TimesNet', 'Transformer']# , 'TemporalFusionTransformer'
-            model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear', 'CrossCrossModel']
+            model_list += ['DUET', 'RAFT', 'GPT4TS', 'OLinear']#, 'CrossCrossModel'
             # model_list += ['Timer', 'TimeLLM', 'Moment', 'TimeBridge']
     elif env =='mamba':
          # 在虚拟环境mamba中运行

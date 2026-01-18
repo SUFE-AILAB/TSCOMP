@@ -370,22 +370,18 @@ if __name__ == '__main__':
                 gym_type='MLP'
             else:
                 gym_type='GRU'
-            folder_pathGym = f'./results_{args.task_name}ing/resultsGym_{gym_type}/{dataset}/{setting}/'
-            if not os.path.exists(folder_path1) and not os.path.exists(folder_path2) and not os.path.exists(folder_pathGym):
-                try:
-                    monitor.start()
-                    args.logger.info('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-                    exp.train(setting)
-                    args.logger.info('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-                    mertics_string = exp.test(setting)
-                    max_mem = monitor.stop()
-                    log_end(setting, result_metric=mertics_string, max_gpu_mem=max_mem, error_msg=None, DB_PATH=LOG_DB_PATH)
-                except Exception as error:
-                    args.logger.info(f'Error when fitting the setting: {setting}, error: {error}')
-                    log_end(setting, None, None, error_msg=str(error), DB_PATH=LOG_DB_PATH)
-                torch.cuda.empty_cache()
-            else:
-                args.logger.info(f'Warning: The results already exist! skip...')
+            try:
+                monitor.start()
+                args.logger.info('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+                exp.train(setting)
+                args.logger.info('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+                mertics_string = exp.test(setting)
+                max_mem = monitor.stop()
+                log_end(setting, result_metric=mertics_string, max_gpu_mem=max_mem, error_msg=None, DB_PATH=LOG_DB_PATH)
+            except Exception as error:
+                args.logger.info(f'Error when fitting the setting: {setting}, error: {error}')
+                log_end(setting, None, None, error_msg=str(error), DB_PATH=LOG_DB_PATH)
+            torch.cuda.empty_cache()
     else:
         ii = 0
         setting = setting_generator(args, ii)

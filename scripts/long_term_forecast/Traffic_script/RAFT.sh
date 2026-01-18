@@ -16,7 +16,8 @@ python3 -u run.py \
   --dec_in 862 \
   --c_out 862 \
   --learning_rate 1e-2 \
-  --topm 1
+  --topm 1 \
+  --save_cpk
 
 
 python3 -u run.py \
@@ -33,7 +34,8 @@ python3 -u run.py \
   --dec_in 862 \
   --c_out 862 \
   --learning_rate 1e-3 \
-  --topm 1
+  --topm 1 \
+  --save_cpk
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -49,7 +51,8 @@ python3 -u run.py \
   --dec_in 862 \
   --c_out 862 \
   --learning_rate 1e-3 \
-  --topm 1
+  --topm 1 \
+  --save_cpk
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -65,4 +68,5 @@ python3 -u run.py \
   --dec_in 862 \
   --c_out 862 \
   --learning_rate 1e-3 \
-  --topm 1
+  --topm 1 \
+  --save_cpk

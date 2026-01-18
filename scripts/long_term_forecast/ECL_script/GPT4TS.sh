@@ -30,5 +30,6 @@ python run.py \
     --model $model \
     --is_gpt 1 \
     --devices 0,1 \
-    --use_multi_gpu
+    --use_multi_gpu \
+    --save_cpk
 done

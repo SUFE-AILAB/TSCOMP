@@ -27,6 +27,7 @@ python run.py \
     --model $model \
     --patience 3 \
     --is_gpt 1 \
-    --use_multi_gpu
+    --use_multi_gpu \
+    --save_cpk
 
 done

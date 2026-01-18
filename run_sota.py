@@ -272,7 +272,8 @@ def create_task_list(param_devices, env, dataset, singlemodel=None, verbose=Fals
                         --is_gpt {is_gpt} \
                         --n_period {n_period} \
                         --q_mat_dir {q_mat_path} \
-                        --q_out_mat_dir {q_out_mat_path} """
+                        --q_out_mat_dir {q_out_mat_path} \
+                        --save_cpk"""
                 task_list.append(task_command)
 
             else:
@@ -424,7 +425,8 @@ def create_task_list(param_devices, env, dataset, singlemodel=None, verbose=Fals
                             --is_gpt {is_gpt} \
                             --loss {loss} \
                             --q_mat_dir {q_mat_path} \
-                            --q_out_mat_dir {q_out_mat_path} {expand_str}"""
+                            --q_out_mat_dir {q_out_mat_path} \
+                            --save_cpk {expand_str}"""
                     task_list.append(task_command)
     
     return task_list

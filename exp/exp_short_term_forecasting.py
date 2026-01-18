@@ -394,7 +394,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             return_results = "After all 6 tasks are finished, you can calculate the averaged index"
 
 
-        if os.path.exists(checkpoint_path):
+        if self.args.save_cpk and os.path.exists(checkpoint_path):
              if self.args.data == 'm4':
                 if os.path.exists(os.path.join(checkpoint_path, f'checkpoint_{self.args.seasonal_patterns}.pth')):
                     os.remove(os.path.join(checkpoint_path, f'checkpoint_{self.args.seasonal_patterns}.pth'))

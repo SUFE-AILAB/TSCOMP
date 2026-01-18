@@ -247,6 +247,10 @@ def get_parser():
     # OLinear
     parser.add_argument('--q_mat_dir', type=str, default='q_mat.npy', help='Olinear q_mat_dir')
     parser.add_argument('--q_out_mat_dir', type=str, default='q_out_mat.npy', help='Olinear q_out_mat_dir')
+    
+    # Save Checkpoints
+    parser.add_argument('--save_cpk', action='store_true', help='save checkpoints', default=False)
+    
     return parser
 
 if __name__ == '__main__':

@@ -430,7 +430,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # 恢复原始 data_path
         self.args.data_path = original_data_path
         
-        if os.path.exists(checkpoint_path):
+        if self.args.save_cpk and os.path.exists(checkpoint_path):
             shutil.rmtree(checkpoint_path)
 
         return "\n".join(test_results)

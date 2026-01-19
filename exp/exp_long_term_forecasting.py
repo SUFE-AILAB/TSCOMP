@@ -48,9 +48,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                                                       gym_rag=gym_rag).float()
             self.save_suffix = 'Gym'
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
-
         if self.args.model == 'RAFT' or ('Gym' in self.args.model and gym_rag == 'True'):
             self.args.use_rag = True
             train_data, _ = self._get_data(flag='train')
@@ -65,6 +62,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     if hasattr(data, 'data_stamp') and data.data_stamp is not None: data.data_stamp = data.data_stamp.cpu()
 
             model.prepare_dataset(train_data, vali_data, test_data)
+
+        if self.args.use_multi_gpu and self.args.use_gpu:
+            model = nn.DataParallel(model, device_ids=list(range(len(self.args.device_ids))))
         return model
 
     def _get_data(self, flag):

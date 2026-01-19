@@ -173,7 +173,7 @@ class TSGymRetrievalTool():
         index = index.to(x.device)
         
         bsz, seq_len, channels = x.shape
-        assert(seq_len == self.seq_len, channels == self.channels)
+        # assert(seq_len == self.seq_len, channels == self.channels)
         
         x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
 
@@ -233,6 +233,17 @@ class TSGymRetrievalTool():
         sim = sim.reshape(num_parallel, bsz, self.n_train) # G, B, T
         ranking_sim = ranking_sim.reshape(num_parallel, bsz, self.n_train) # G, B, T
 
+        # Avoid NaN when all values are -inf (happens in small datasets like Illness with large seq_len)
+        if torch.isinf(ranking_sim).all():
+             ranking_sim.fill_(0.0)
+        else:
+             # Handle batch items individually if necessary, but global check is safer for now
+             # Replace rows that are all -inf with 0
+             row_max = torch.max(ranking_sim, dim=-1, keepdim=True)[0]
+             mask_all_inf = torch.isinf(row_max)
+             if mask_all_inf.any():
+                 ranking_sim = torch.where(mask_all_inf, torch.zeros_like(ranking_sim), ranking_sim)
+
         data_len, seq_len, channels = self.train_data_all.shape
             
         ranking_prob = F.softmax(ranking_sim / self.temperature, dim=2)
@@ -259,7 +270,7 @@ class TSGymRetrievalTool():
         # index = index.to(x.device) # index device handling moved below
         
         bsz, seq_len, channels = x.shape
-        assert(seq_len == self.seq_len, channels == self.channels)
+        # assert(seq_len == self.seq_len, channels == self.channels)
         
         x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
 
@@ -514,7 +525,7 @@ class RetrievalTool():
         index = index.to(x.device)
         
         bsz, seq_len, channels = x.shape
-        assert(seq_len == self.seq_len, channels == self.channels)
+        # assert(seq_len == self.seq_len, channels == self.channels)
         
         x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
 
@@ -547,6 +558,17 @@ class RetrievalTool():
         
         sim = sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
         ranking_sim = ranking_sim.reshape(self.n_period, bsz, self.n_train) # G, B, T
+
+        # Avoid NaN when all values are -inf (happens in small datasets like Illness with large seq_len)
+        if torch.isinf(ranking_sim).all():
+             ranking_sim.fill_(0.0)
+        else:
+             # Handle batch items individually if necessary, but global check is safer for now
+             # Replace rows that are all -inf with 0
+             row_max = torch.max(ranking_sim, dim=-1, keepdim=True)[0]
+             mask_all_inf = torch.isinf(row_max)
+             if mask_all_inf.any():
+                 ranking_sim = torch.where(mask_all_inf, torch.zeros_like(ranking_sim), ranking_sim)
 
         data_len, seq_len, channels = self.train_data_all.shape
             

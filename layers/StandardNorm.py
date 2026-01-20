@@ -115,7 +115,7 @@ class DishTS(nn.Module):
     def preget(self, batch_x):
         if self.mode == 'RevIN':
             self.phil = self.phih = torch.mean(batch_x, axis=1, keepdim=True).detach()
-            self.xil = self.xih = torch.var(batch_x, axis=1, keepdim=True).detach()
+            self.xil = self.xih = torch.var(batch_x, axis=1, keepdim=True, unbiased=False).detach()
 
         elif self.mode == 'DishTS':
             x_transpose = batch_x.permute(2, 0, 1)
@@ -124,8 +124,12 @@ class DishTS(nn.Module):
                 theta = F.gelu(theta)
             self.phil, self.phih = theta[:, :1, :], theta[:, 1:, :]
             # 注意lookback window和forecast horizon的xil/xih都是根据phil/phih自动算出来的, 而不是模型学习额外再学习的
-            self.xil = torch.sum(torch.pow(batch_x - self.phil, 2), axis=1, keepdim=True) / (batch_x.shape[1] - 1)
-            self.xih = torch.sum(torch.pow(batch_x - self.phih, 2), axis=1, keepdim=True) / (batch_x.shape[1] - 1)
+            if batch_x.shape[1] > 1:
+                self.xil = torch.sum(torch.pow(batch_x - self.phil, 2), axis=1, keepdim=True) / (batch_x.shape[1] - 1)
+                self.xih = torch.sum(torch.pow(batch_x - self.phih, 2), axis=1, keepdim=True) / (batch_x.shape[1] - 1)
+            else:
+                 self.xil = torch.sum(torch.pow(batch_x - self.phil, 2), axis=1, keepdim=True) / (batch_x.shape[1])
+                 self.xih = torch.sum(torch.pow(batch_x - self.phih, 2), axis=1, keepdim=True) / (batch_x.shape[1])
         else:
             raise NotImplementedError
 

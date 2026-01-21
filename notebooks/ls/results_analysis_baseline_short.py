@@ -136,7 +136,7 @@ def main():
     BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear']#, 'CrossCrossModel'
     BASELINE_LIST += ['DUET','TimeMixer','MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','Autoformer','SegRNN','Mamba', 'iTransformer', 'TimeXer', 
                           'PAttn', 'Koopa','TSMixer', 'FreTS',  'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS', 'Informer', 'Transformer', 'Reformer']
-    BASELINE_LIST +=  ['FiLM','TiDE']
+    BASELINE_LIST +=  ['FiLM']#,'TiDE'
 
     if not os.path.exists(root_results_dir):
         print(f"Results dir not found: {root_results_dir}")

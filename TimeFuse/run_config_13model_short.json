@@ -1,11 +1,11 @@
 {
     "datasets": [
-      "m4_hourly",
-      "m4_daily",
-      "m4_weekly",
-      "m4_monthly",
-      "m4_quarterly",
-      "m4_yearly"
+      "m4_Hourly",
+      "m4_Daily",
+      "m4_Weekly",
+      "m4_Monthly",
+      "m4_Quarterly",
+      "m4_Yearly"
     ],
     "models": [
       "DLinear",
@@ -23,12 +23,14 @@
       "TimeMixer"
     ],
     "forecast_settings": [
-      [96, 48, 96],
-            [96, 48, 192],
-            [96, 48, 336],
-            [96, 48, 720]
-    ],
-    "override_args": {
+        [96, 48, 6],
+              [96, 48, 8],
+              [96, 48, 18],
+              [96, 48, 13],
+              [96, 48, 14],
+              [96, 48, 48]
+      ],
+      "override_args": {
         "use_gpu": true,
         "gpu": 0
     }

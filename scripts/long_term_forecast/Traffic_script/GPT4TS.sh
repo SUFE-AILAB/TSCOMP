@@ -14,7 +14,7 @@ python run.py \
     --seq_len $seq_len \
     --label_len 48 \
     --pred_len $pred_len \
-    --batch_size 16 \
+    --batch_size 4 \
     --learning_rate 0.001 \
     --train_epochs 10 \
     --d_model 768 \

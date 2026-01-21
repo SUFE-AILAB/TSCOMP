@@ -69,4 +69,5 @@ python3 -u run.py \
   --c_out 862 \
   --learning_rate 1e-3 \
   --topm 1 \
+  --use_multi_gpu \
   --save_cpk

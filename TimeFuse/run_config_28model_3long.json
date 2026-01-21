@@ -1,0 +1,47 @@
+{
+    "datasets": [
+      "ili",
+      "nasdaq",
+      "nyse"
+    ],
+    "models": [
+      "Autoformer", 
+      "PatchTST", 
+      "DLinear", 
+      "LightTS", 
+      "Pyraformer", 
+      "MICN", 
+      "Koopa", 
+      "FEDformer", 
+      "Reformer", 
+      "SegRNN", 
+      "Crossformer",
+      "TimeMixer", 
+      "Nonstationary_Transformer", 
+      "ETSformer",
+      "TSMixer", 
+      "TimeXer", 
+      "iTransformer", 
+      "Informer", 
+      "FreTS", 
+      "SCINet", 
+      "PAttn",
+      "TimesNet", 
+      "Transformer",
+      "DUET", 
+      "RAFT", 
+      "GPT4TS", 
+      "OLinear", 
+      "Mamba"
+    ],
+    "forecast_settings": [
+      [36, 18, 24],
+            [36, 18, 36],
+            [36, 18, 48],
+            [36, 18, 60]
+    ],
+    "override_args": {
+        "use_gpu": true,
+        "gpu": 0
+    }
+  }

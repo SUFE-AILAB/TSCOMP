@@ -383,7 +383,7 @@ if __name__ == "__main__":
     all_exp_args = get_all_exp_args(
         datasets=run_configs["datasets"],
         models=run_configs["models"],
-        forecast_settings="auto", # auto load from scripts to retrieve real seq_len/label_len for each model
+        forecast_settings=run_configs["forecast_settings"], # auto load from scripts to retrieve real seq_len/label_len for each model
         override_args=run_configs["override_args"],
         base_config_path="scripts/long_term_forecast/",
         run_sota_path="run_sota.py",
@@ -447,7 +447,7 @@ if __name__ == "__main__":
 
 
     # [4] TimeFuse: Fusor training and evaluation
-    random_seed = 42
+    random_seed = 2021
     n_epochs = 5  # meta training epochs
     batch_size = 64  # meta batch size
     learning_rate = 0.0005  # fusor learning rate

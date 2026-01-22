@@ -21,7 +21,8 @@ python3 -u run.py \
   --dec_in 321 \
   --c_out 321 \
   --des 'Exp' \
-  --itr 1
+  --itr 1 \
+    --save_cpk
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -42,7 +43,8 @@ python3 -u run.py \
   --dec_in 321 \
   --c_out 321 \
   --des 'Exp' \
-  --itr 1
+  --itr 1 \
+    --save_cpk
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -63,7 +65,8 @@ python3 -u run.py \
   --dec_in 321 \
   --c_out 321 \
   --des 'Exp' \
-  --itr 1
+  --itr 1 \
+    --save_cpk
 
 python3 -u run.py \
   --task_name long_term_forecast \
@@ -84,4 +87,5 @@ python3 -u run.py \
   --dec_in 321 \
   --c_out 321 \
   --des 'Exp' \
-  --itr 1
+  --itr 1 \
+    --save_cpk

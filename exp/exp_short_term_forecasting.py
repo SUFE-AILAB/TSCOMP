@@ -346,9 +346,9 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             elif 'TSFM' in setting:
                 folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_TSFM/{dataset}/' + setting + '/'
             elif 'MLP' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_MLP/{dataset}/' + setting + '/'
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_MLP/{dataset}/' + setting + '/'
             elif 'GRU' in setting:
-                folder_path = f'./results_long_term_forecasting/results{self.save_suffix}_GRU/{dataset}/' + setting + '/'
+                folder_path = f'./results_short_term_forecasting/results{self.save_suffix}_GRU/{dataset}/' + setting + '/'
         else:
             folder_path = f'./results_short_term_forecasting/results{self.save_suffix}/{dataset}/' + setting + '/'
 

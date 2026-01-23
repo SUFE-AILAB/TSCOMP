@@ -25,25 +25,41 @@ for target in target_dirs:
             except Exception as e:
                  nan_records.append({"path": file_path, "type": "npy", "reason": f"Read Error: {e}"})
         
-        # 2. Check CSV files (Especially for M4 or where csv is the result format)
+        # 2. Check metrics.npz (Common in short-term forecasting results)
+        if "metrics.npz" in filenames:
+            file_path = os.path.join(dirpath, "metrics.npz")
+            try:
+                with np.load(file_path, allow_pickle=True) as data:
+                    arr = data[data.files[0]]
+                    if arr.dtype == object:
+                        for item in arr.flat:  # 遍历数组中的每一个元素（字典）
+                            # 检查字典的所有 values 中是否有 NaN
+                            # 使用 pd.isna(v) 可以兼容 float('nan')
+                            for k,v in item.items():
+                                if pd.isna(v):
+                                    nan_records.append({"path": file_path, "type": "npz", "reason": f"Contains NaN in {k}"})
+                    else:
+                        raise ValueError(f"Unexpected dtype: {arr.dtype}")
+            except Exception as e:
+                nan_records.append({"path": file_path, "type": "npz", "reason": f"Read Error: {e}"})
+
+        # 3. Check CSV files
         csv_files = [f for f in filenames if f.endswith(".csv")]
         for csv_file in csv_files:
-             file_path = os.path.join(dirpath, csv_file)
-             try:
-                # Assuming standard csv
+            file_path = os.path.join(dirpath, csv_file)
+            try:
                 df_temp = pd.read_csv(file_path)
                 if df_temp.isnull().values.any():
-                     # Sometimes metadata lines or footer might cause issues, but for result csvs usually they are clean
-                     nan_records.append({"path": file_path, "type": "csv", "reason": "Contains NaN"})
-             except Exception as e:
-                 nan_records.append({"path": file_path, "type": "csv", "reason": f"Read Error: {e}"})
+                    nan_records.append({"path": file_path, "type": "csv", "reason": "Contains NaN"})
+            except Exception as e:
+                nan_records.append({"path": file_path, "type": "csv", "reason": f"Read Error: {e}"})
 
 print(f"Scan complete. Found {len(nan_records)} issues.")
 
 if nan_records:
     nan_df = pd.DataFrame(nan_records)
     pd.set_option('display.max_colwidth', None)
-    nan_df.to_csv("corrupted_files_report_short.txt", index=False)
+    nan_df.to_csv("notebooks/ls/corrupted_files_report.txt", index=False)
     
     # # Delete corrupted files
     # print(f"\nDeleting {len(nan_records)} corrupted files...")

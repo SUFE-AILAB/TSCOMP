@@ -96,5 +96,4 @@ python3 -u run.py \
   --des 'Exp' \
   --n_heads 2 \
   --batch_size 4 \
-  --itr 1 \
-  --use_multi_gpu
+  --itr 1 

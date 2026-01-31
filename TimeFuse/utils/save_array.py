@@ -4,20 +4,31 @@ import os
 import time
 
 
-def save_arr(arr, file_path, file_type="h5", create_dir=True, dtype=None, verbose=True):
+def save_arr(
+    arr,
+    file_path,
+    file_type="h5",
+    create_dir=True,
+    dtype=None,
+    compression="lzf",
+    verbose=True,
+):
     start_time = time.time()
 
     if dtype is not None:
         arr = arr.astype(dtype)
 
     if create_dir:
-        if not os.path.exists(file_path) and verbose:
-            print(f"Creating directory: {os.path.dirname(file_path)}")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     if file_type == "h5":
         with h5py.File(file_path, "w") as f:
-            f.create_dataset("arr", data=arr, compression="gzip")
+            # Using lzf compression by default as it's much faster than gzip
+            # For extremely large arrays, consider compression=None
+            if compression is not None:
+                f.create_dataset("arr", data=arr, compression=compression)
+            else:
+                f.create_dataset("arr", data=arr)
     elif file_type == "npy":
         np.save(file_path, arr)
     else:
@@ -27,7 +38,7 @@ def save_arr(arr, file_path, file_type="h5", create_dir=True, dtype=None, verbos
         end_time = time.time()
         file_size = os.path.getsize(file_path) / (1024**2)
         print(
-            f"Array has been saved to '{file_path}', size: {file_size:.2f} MB ({end_time - start_time:.2f}s)"
+            f"Array has been saved to '{file_path}', size: {file_size:.2f} MB ({end_time - start_time:.2f}s, compression={compression})"
         )
 
 

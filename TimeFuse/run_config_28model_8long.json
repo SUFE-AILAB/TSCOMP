@@ -5,9 +5,9 @@
       "ETTm1",
       "ETTm2",
       "weather",
+      "exchange",
       "electricity",
-      "traffic",
-      "exchange"
+      "traffic"
     ],
     "models": [
       "Autoformer", 

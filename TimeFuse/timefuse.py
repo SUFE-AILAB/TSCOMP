@@ -8,6 +8,7 @@ import random
 import pandas as pd
 import numpy as np
 import tqdm
+import h5py
 from TimeFuse.utils.save_array import load_arr, save_arr
 from utils.metrics import metric
 from sklearn.preprocessing import StandardScaler, FunctionTransformer
@@ -136,19 +137,49 @@ class Dataset_Meta(Dataset):
         pred_postfix = f"{seq_len}_{label_len}_{pred_len}"
         if subset_size is not None:
             pred_postfix += f"_subset{subset_size}_seed{subset_seed}"
-        self.y_model_preds = load_arr(
-            f"{root_path}y_pred_{pred_postfix}.h5", verbose=verbose
-        )
-        self.y_true = load_arr(f"{root_path}y_true_{pred_postfix}.h5", verbose=verbose)
+        
+        # Lazy loading setup
+        self.pred_path = f"{root_path}y_pred_{pred_postfix}.h5"
+        self.true_path = f"{root_path}y_true_{pred_postfix}.h5"
+        self.pred_file = None
+        self.true_file = None
+        
+        # Open briefly to check length and existence
+        if verbose:
+            print(f"Checking {self.pred_path} ...")
+        with h5py.File(self.pred_path, "r") as f:
+            self.data_len = f["arr"].shape[0]
+            
         # x_meta maybe longer than y_model_preds and y_true
-        if len(self.x_meta) > len(self.y_model_preds):
-            self.x_meta = self.x_meta[: len(self.y_model_preds)]
+        if len(self.x_meta) > self.data_len:
+            self.x_meta = self.x_meta[: self.data_len]
+            
+        # We still load y_true into memory as it is usually small (1 column or few columns)
+        # But if y_true is also huge, we might want to lazy load it too. 
+        # For now, let's keep y_true in memory for speed as it is used for loss calculation constantly.
+        # Wait, y_true is (samples, pred_len, d_model), same huge size. We should lazy load it too.
+        self.y_true = load_arr(self.true_path, verbose=verbose) 
 
     def __len__(self):
         return len(self.x_meta)
 
     def __getitem__(self, idx):
-        return self.x_meta[idx], self.y_model_preds[idx], self.y_true[idx]
+        if self.pred_file is None:
+            self.pred_file = h5py.File(self.pred_path, "r")
+        
+        y_model_preds = self.pred_file["arr"][idx]
+        
+        return self.x_meta[idx], y_model_preds, self.y_true[idx]
+
+    @property
+    def y_model_preds(self):
+        if self.pred_file is None:
+            self.pred_file = h5py.File(self.pred_path, "r")
+        return self.pred_file["arr"]
+
+    def __del__(self):
+        if self.pred_file is not None:
+            self.pred_file.close()
 
 
 def get_datasets_best_single_perf(

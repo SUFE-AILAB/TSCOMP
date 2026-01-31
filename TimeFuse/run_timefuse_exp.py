@@ -28,6 +28,8 @@ import pandas as pd
 import time
 import tqdm
 import argparse
+import h5py
+import gc
 
 def get_config_by_pred_len(all_exp_args, dataset_name, model_name, pred_len):
     """
@@ -122,7 +124,7 @@ def extract_input_meta_feats(
         split_name=split_name
     )  # extract input time series meta features
     save_arr(
-        arr=df_x_meta.values,
+        arr=df_x_meta.values.astype(np.float32),
         file_path=meta_file_path,
         file_type="h5",
         create_dir=True,
@@ -161,12 +163,15 @@ def extract_output_pred_true(
             f"[Output Pred & True Extract] Extracting {dataset_name}-{split_name} predictions and ground truth..."
         )
 
-    data_preds = {}
-    for model_name in run_configs["models"]:
+    os.makedirs(os.path.dirname(pred_file_path), exist_ok=True)
+    
+    num_models = len(run_configs["models"])
+    h5_file = None
+    final_trues = None
+    
+    for model_idx, model_name in enumerate(run_configs["models"]):
         
         # Use helper to find the actual config for this model & pred_len
-        # This retrieves the correct seq_len/label_len automatically from all_exp_args
-        # (which was populated via "auto" mode from scripts)
         args = get_config_by_pred_len(all_exp_args, dataset_name, model_name, pred_len)
 
         if args is None:
@@ -180,8 +185,6 @@ def extract_output_pred_true(
         exp = Exp_Fuse_Forecasting(args)
 
         setting = setting_generator(args, 0)
-
-
 
         start_time = time.time()
         print(
@@ -204,38 +207,36 @@ def extract_output_pred_true(
             verbose=False,
         )
         print(f"Done in {time.time() - start_time:.2f} seconds")
-        data_preds[model_name] = preds
+        
+        # Initialize H5 file using the shape of the first successful prediction
+        if h5_file is None:
+            num_samples, actual_pred_len, d_model = preds.shape
+            h5_file = h5py.File(pred_file_path, "w")
+            # Dataset shape: (samples, models, pred_len, d_model)
+            h5_file.create_dataset("arr", (num_samples, num_models, actual_pred_len, d_model), dtype='float32', compression="lzf")
+            final_trues = trues.astype(np.float32)
 
+        # Write to the specific model index
+        h5_file["arr"][:, model_idx, :, :] = preds.astype(np.float32)
+        
+        # Clean up memory immediately
+        del preds
+        del trues
         del exp
         torch.cuda.empty_cache()
+        gc.collect()
 
-    # rearrange preds dimension
-    print(f"[Output Pred & True Extract] Rearranging preds dimension ...", end="")
-    start_time = time.time()
-    all_model_preds = np.array(
-        [data_preds[model_name] for model_name in run_configs["models"]]
-    ).transpose(1, 0, 2, 3)
-    print(f"Done in {time.time() - start_time:.2f} seconds")
-
-    postfix = f"{seq_len}_{label_len}_{pred_len}"
-    pred_file_path = (
-        f"{meta_train_root}/{dataset_name}_{split_name}/y_pred_{postfix}.h5"
-    )
-    true_file_path = (
-        f"{meta_train_root}/{dataset_name}_{split_name}/y_true_{postfix}.h5"
-    )
-    save_arr(
-        arr=all_model_preds,
-        file_path=pred_file_path,
-        file_type="h5",
-        create_dir=True,
-    )
-    save_arr(
-        arr=trues,
-        file_path=true_file_path,
-        file_type="h5",
-        create_dir=True,
-    )
+    if h5_file is not None:
+        h5_file.close()
+        print(f"[Output Pred & True Extract] Predictions saved to {pred_file_path}")
+    
+    if final_trues is not None:
+        save_arr(
+            arr=final_trues,
+            file_path=true_file_path,
+            file_type="h5",
+            create_dir=True,
+        )
     return
 
 def save_final_comparison(few_shot_list, zero_shot_list, desc_suffix):
@@ -372,7 +373,6 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='TimeFuse/run_config.json', help='Path to run config json')
-    parser.add_argument('--desc', type=str, default='combined', help='Description for output file suffix')
     parser.add_argument('--no_force_override_output', action='store_false', help='Do not force override output files', default=True)
     main_args = parser.parse_args()
 
@@ -402,22 +402,22 @@ if __name__ == "__main__":
             args.device_ids = [int(id_) for id_ in device_ids]
             args.gpu = args.device_ids[0]
         print(f"Base model training {setting}")
-        exp = Exp_Fuse_Forecasting(args)
-        print(f"[Device: {exp.device}]")
-        model, vali_loss, test_loss = exp.train(
-            setting=setting,
-            verbose=False,
-            tqdm_disable=False,
-            save_model=True,
-            override_saved_model=False,
-            raise_fwd_error=True,
-        )
+        # exp = Exp_Fuse_Forecasting(args)
+        # print(f"[Device: {exp.device}]")
+        # model, vali_loss, test_loss = exp.train(
+        #     setting=setting,
+        #     verbose=False,
+        #     tqdm_disable=False,
+        #     save_model=True,
+        #     override_saved_model=False,
+        #     raise_fwd_error=True,
+        # )
 
 
     # # [3] Meta-training Data Extraction
 
     split_names = ["val", "test"]
-    meta_train_root = f"TimeFuse/meta_data_{main_args.desc}"
+    meta_train_root = f"TimeFuse/meta_data_{len(run_configs['models'])}model"
 
     for dataset_name in run_configs["datasets"]:
         for seq_len, label_len, pred_len in run_configs["forecast_settings"]:
@@ -658,7 +658,7 @@ if __name__ == "__main__":
             
             # Save results immediately
             print("Saving intermediate results...")
-            save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list, desc_suffix=main_args.desc)
+            save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list, desc_suffix=f"{len(run_configs['models'])}model_{len(run_configs['datasets'])}long")
 
     # [6] Save Final Combined Comparison Results
-    save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list, desc_suffix=main_args.desc)
+    save_final_comparison(all_few_shot_results_list, all_zero_shot_results_list, desc_suffix=f"{len(run_configs['models'])}model_{len(run_configs['datasets'])}long")

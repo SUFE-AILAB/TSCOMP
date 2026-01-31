@@ -2,13 +2,24 @@ import pandas as pd
 import numpy as np
 import os
 import re
+"""
+'OLinear', 'RAFT', 'GPT4TS', 'DUET'# 2025
+'TimeMixer', 'TimeXer', 'PAttn', 'iTransformer','Mamba'# 2024
+'MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','SegRNN', 'Koopa','TSMixer', 'FreTS'#2023
+'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS'#2022
+'Autoformer', 'Informer', 'Reformer', 'Transformer'
+"""
 
 # 找到SOTA的结果
-BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear']#, 'CrossCrossModel'
-BASELINE_LIST += ['DUET','TimeMixer','MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','Autoformer','SegRNN','Mamba', 'iTransformer', 'TimeXer', 
-                      'PAttn', 'Koopa','TSMixer', 'FreTS',  'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS', 'Informer', 'Transformer', 'Reformer']
-BASELINE_LIST +=  ['FiLM']#, 'TemporalFusionTransformer','TiDE'
+BASELINE_LIST = ['GPT4TS',]
+BASELINE_LIST += ['OLinear', 'RAFT', 'DUET']#, 'CrossCrossModel'# 2025
+BASELINE_LIST += ['TimeMixer', 'TimeXer', 'PAttn', 'iTransformer','Mamba']# 2024
+BASELINE_LIST += ['MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','SegRNN', 'Koopa','TSMixer', 'FreTS']#2023
+BASELINE_LIST += ['Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS']#2022
+BASELINE_LIST += ['Autoformer', 'Informer', 'Reformer', 'Transformer']  #2021
+BASELINE_LIST +=  ['FiLM',]#, 'TemporalFusionTransformer','TiDE'
 # BASELINE_LIST += ['FreDF', 'Timer', 'TimeLLM', 'Moment', 'TimeBridge']
+BASELINE_LIST = list(dict.fromkeys(BASELINE_LIST))
 DATASETS_LIST = ['ETTm1','ETTm2','ETTh1','ETTh2','ECL','traffic','weather','Exchange','ili', 'nyse', 'nasdaq']
 
 # sota performance

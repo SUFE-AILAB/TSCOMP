@@ -133,10 +133,13 @@ def main():
     root_results_dir = os.path.join('results_short_term_forecasting/results/m4/')
     dataset_path = os.path.join('dataset/m4')
 
-    BASELINE_LIST = ['RAFT', 'GPT4TS', 'OLinear']#, 'CrossCrossModel'
-    BASELINE_LIST += ['DUET','TimeMixer','MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','Autoformer','SegRNN','Mamba', 'iTransformer', 'TimeXer', 
-                          'PAttn', 'Koopa','TSMixer', 'FreTS',  'Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS', 'Informer', 'Transformer', 'Reformer']
-    BASELINE_LIST +=  ['FiLM']#,'TiDE'
+    BASELINE_LIST = ['GPT4TS',]
+    BASELINE_LIST += ['OLinear', 'RAFT', 'DUET']#, 'CrossCrossModel'# 2025
+    BASELINE_LIST += ['TimeMixer', 'TimeXer', 'PAttn', 'iTransformer','Mamba']# 2024
+    BASELINE_LIST += ['MICN', 'TimesNet','PatchTST', 'DLinear','Crossformer','SegRNN', 'Koopa','TSMixer', 'FreTS']#2023
+    BASELINE_LIST += ['Pyraformer', 'Nonstationary', 'ETSformer', 'FEDformer', 'SCINet','LightTS']#2022
+    BASELINE_LIST += ['Autoformer', 'Informer', 'Reformer', 'Transformer']  #2021
+    BASELINE_LIST +=  ['FiLM',]#, 'TemporalFusionTransformer','TiDE'
 
     if not os.path.exists(root_results_dir):
         print(f"Results dir not found: {root_results_dir}")

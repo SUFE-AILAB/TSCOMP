@@ -10,7 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 
 # 项目根目录
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 
 # Gym 类型列表
 GYM_TYPES = ['transformer', 'GRU', 'MLP', 'LLM', 'TSFM']
@@ -1014,9 +1014,11 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
     long_term_common = {}  # {gym_type: 共同成功的 ID 集合}
     long_term_common_no_traffic_ecl = {}  # 排除 traffic, ecl
     long_term_common_no_traffic_ecl_weather = {}  # 排除 traffic, ecl, weather
-    
+    long_term_common_ett = {}  # 只在 4 个 ETT 数据集上
+
     exclude_set_1 = {'traffic', 'ecl'}
     exclude_set_2 = {'traffic', 'ecl', 'weather'}
+    ett_set = {'etth1', 'etth2', 'ettm1', 'ettm2'}
     
     for gym_type in GYM_TYPES:
         gym_results = long_results.get(gym_type, {})
@@ -1073,11 +1075,19 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
             long_term_common_no_traffic_ecl_weather[gym_type] = set.intersection(*subset_2.values())
         else:
             long_term_common_no_traffic_ecl_weather[gym_type] = set()
+        
+        # 计算交集 (只在 4 个 ETT 数据集上)
+        subset_ett = {ds: ids for ds, ids in dataset_success_ids.items() if ds in ett_set}
+        if len(subset_ett) == len(ett_set): # 确保所有 ETT 数据集都有数据
+            long_term_common_ett[gym_type] = set.intersection(*subset_ett.values())
+        else:
+            long_term_common_ett[gym_type] = set()
     
     # ========== 计算 Short Term 的共同成功数量 ==========
     short_term_common = {}  # {gym_type: 共同成功的 ID 集合}
     short_term_common_no_traffic_ecl = {}  # 排除 traffic, ecl
     short_term_common_no_traffic_ecl_weather = {}  # 排除 traffic, ecl, weather
+    short_term_common_ett = {}  # 只在 4 个 ETT 数据集上
     
     for gym_type in GYM_TYPES:
         gym_results = short_results.get(gym_type, {})
@@ -1113,6 +1123,13 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
             short_term_common_no_traffic_ecl_weather[gym_type] = set.intersection(*subset_2.values())
         else:
             short_term_common_no_traffic_ecl_weather[gym_type] = set()
+
+        # 计算交集 (只在 4 个 ETT 数据集上)
+        subset_ett = {ds: ids for ds, ids in dataset_success_ids.items() if ds in ett_set}
+        if len(subset_ett) == len(ett_set): # 确保所有 ETT 数据集都有数据
+            short_term_common_ett[gym_type] = set.intersection(*subset_ett.values())
+        else:
+            short_term_common_ett[gym_type] = set()
     
     # ========== 处理 Long Term 数据 ==========
     for gym_type in GYM_TYPES:
@@ -1122,6 +1139,7 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
         common_count = len(long_term_common.get(gym_type, set()))
         common_count_no_te = len(long_term_common_no_traffic_ecl.get(gym_type, set()))
         common_count_no_tew = len(long_term_common_no_traffic_ecl_weather.get(gym_type, set()))
+        common_count_ett = len(long_term_common_ett.get(gym_type, set()))
         
         for dataset in sorted(all_datasets):
             expected_ids = gym_expected.get(dataset, set())
@@ -1146,7 +1164,8 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
                     'notrun': len(not_run_ids),
                     'common_count': common_count,
                     'common_count_no_traffic_ecl': common_count_no_te,
-                    'common_count_no_traffic_ecl_weather': common_count_no_tew
+                    'common_count_no_traffic_ecl_weather': common_count_no_tew,
+                    'common_count_ett': common_count_ett
                 })
                 
                 # 记录 Bug (现在是 dict)
@@ -1168,6 +1187,7 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
         common_count = len(short_term_common.get(gym_type, set()))
         common_count_no_te = len(short_term_common_no_traffic_ecl.get(gym_type, set()))
         common_count_no_tew = len(short_term_common_no_traffic_ecl_weather.get(gym_type, set()))
+        common_count_ett = len(short_term_common_ett.get(gym_type, set()))
         
         for dataset in sorted(all_datasets):
             expected_ids = gym_expected.get(dataset, set())
@@ -1233,7 +1253,8 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
                         'notrun': freq_notrun_count,
                         'common_count': common_count,
                         'common_count_no_traffic_ecl': common_count_no_te,
-                        'common_count_no_traffic_ecl_weather': common_count_no_tew
+                        'common_count_no_traffic_ecl_weather': common_count_no_tew,
+                        'common_count_ett': common_count_ett
                     })
                     
                     # 记录 Bug (现在是 dict，需要获取文件路径)
@@ -1265,7 +1286,8 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
                     'notrun': len(not_run_ids),
                     'common_count': common_count,
                     'common_count_no_traffic_ecl': common_count_no_te,
-                    'common_count_no_traffic_ecl_weather': common_count_no_tew
+                    'common_count_no_traffic_ecl_weather': common_count_no_tew,
+                    'common_count_ett': common_count_ett
                 })
                 
                 for tsgym_id, info in bug_info.items():
@@ -1281,7 +1303,7 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
     # ========== 写入 CSV ==========
     with open(csv_output, 'w', newline='', encoding='utf-8') as f:
         fieldnames = ['forecast_type', 'gym_type', 'dataset', 'pl', 'success', 'bug', 'notrun', 
-                      'common_count', 'common_count_no_traffic_ecl', 'common_count_no_traffic_ecl_weather']
+                      'common_count', 'common_count_no_traffic_ecl', 'common_count_no_traffic_ecl_weather', 'common_count_ett']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(csv_rows)
@@ -1300,6 +1322,147 @@ def generate_combined_csv_report(csv_output: str = None, bugs_output: str = None
     print(f"Bug 列表 CSV 已保存到: {bugs_output}")
     print(f"共找到 {len(all_bugs)} 个 Bug")
 
+    # 生成聚合摘要报告
+    summary_output = str(ROOT / 'notebooks' / 'ls' / 'dataset_gym_summary.csv')
+    generate_aggregated_summary_csv(summary_output)
+
+
+def generate_aggregated_summary_csv(output_file: str):
+    """
+    生成按 (gym_type, dataset) 聚合的摘要报告
+    """
+    import csv
+    from collections import defaultdict
+
+    # 1. 收集所有结果
+    long_results = collect_all_results_with_status('long_term')
+    long_expected = collect_expected_scripts('long_term')
+    short_results = collect_all_results_with_status('short_term')
+    short_expected = collect_expected_scripts('short_term')
+
+    # 2. 聚合数据: {(gym_type, dataset): {'success': count, 'bug': count, 'notrun': count}}
+    aggregated = defaultdict(lambda: {'success': 0, 'bug': 0, 'notrun': 0})
+
+    # 处理 Long Term
+    for gym_type in GYM_TYPES:
+        gym_results = long_results.get(gym_type, {})
+        gym_expected = long_expected.get(gym_type, {})
+        all_datasets = set(gym_results.keys()) | set(gym_expected.keys())
+        
+        for dataset in all_datasets:
+            expected_ids = gym_expected.get(dataset, set())
+            expected_random = {tid for tid in expected_ids if is_random(tid)}
+            dataset_pred_lens = get_pred_lens_for_dataset(dataset)
+            
+            for pl in dataset_pred_lens:
+                pl_data = gym_results.get(dataset, {}).get(pl, {'success': set(), 'bug': {}, 'folders': {}})
+                success_ids = {tid for tid in pl_data['success'] if is_random(tid)}
+                bug_info = {tid: info for tid, info in pl_data['bug'].items() if is_random(tid)}
+                
+                run_ids = success_ids | set(bug_info.keys())
+                not_run_ids = expected_random - run_ids
+                
+                aggregated[(gym_type, dataset)]['success'] += len(success_ids)
+                aggregated[(gym_type, dataset)]['bug'] += len(bug_info)
+                aggregated[(gym_type, dataset)]['notrun'] += len(not_run_ids)
+
+    # 处理 Short Term
+    for gym_type in GYM_TYPES:
+        gym_results = short_results.get(gym_type, {})
+        gym_expected = short_expected.get(gym_type, {})
+        all_datasets = set(gym_results.keys()) | set(gym_expected.keys())
+        
+        for dataset in all_datasets:
+            expected_ids = gym_expected.get(dataset, set())
+            expected_random = {tid for tid in expected_ids if is_random(tid)}
+            
+            if dataset == 'm4':
+                pl_data = gym_results.get(dataset, {}).get(0, {'success': set(), 'bug': {}, 'folders': {}, 'success_info': {}})
+                for freq in SHORT_TERM_FREQUENCIES:
+                    freq_success_count = 0
+                    freq_bug_count = 0
+                    freq_notrun_count = 0
+                    
+                    for tid in expected_random:
+                        is_success = False
+                        is_bug = False
+                        if tid in pl_data['success']:
+                            info = pl_data['success_info'].get(tid)
+                            if info and freq in info.get('npz_available_keys', []):
+                                is_success = True
+                        elif tid in pl_data['bug']:
+                            bug_detail = pl_data['bug'][tid]
+                            has_npz = bug_detail.get('has_npz', False)
+                            if has_npz:
+                                available_keys = bug_detail.get('npz_available_keys', [])
+                                nan_freqs = bug_detail.get('npz_nan_frequencies', [])
+                                if freq in available_keys:
+                                    if freq in nan_freqs:
+                                        is_bug = True
+                                    else:
+                                        is_success = True
+                            else:
+                                csv_res = bug_detail.get('csv_results', {})
+                                if freq in csv_res:
+                                    has_csv, has_nan = csv_res[freq]
+                                    if has_csv:
+                                        if has_nan:
+                                            is_bug = True
+                                        else:
+                                            is_success = True
+                        
+                        if is_success:
+                            freq_success_count += 1
+                        elif is_bug:
+                            freq_bug_count += 1
+                        else:
+                            freq_notrun_count += 1
+                    
+                    aggregated[(gym_type, dataset)]['success'] += freq_success_count
+                    aggregated[(gym_type, dataset)]['bug'] += freq_bug_count
+                    aggregated[(gym_type, dataset)]['notrun'] += freq_notrun_count
+            else:
+                pl_data = gym_results.get(dataset, {}).get(0, {'success': set(), 'bug': {}, 'folders': {}})
+                success_ids = {tid for tid in pl_data['success'] if is_random(tid)}
+                bug_info = {tid: info for tid, info in pl_data['bug'].items() if is_random(tid)}
+                run_ids = success_ids | set(bug_info.keys())
+                not_run_ids = expected_random - run_ids
+                
+                aggregated[(gym_type, dataset)]['success'] += len(success_ids)
+                aggregated[(gym_type, dataset)]['bug'] += len(bug_info)
+                aggregated[(gym_type, dataset)]['notrun'] += len(not_run_ids)
+
+    # 3. 准备 CSV 行并排序
+    csv_rows = []
+    # 按 (gym_type, dataset) 排序
+    sorted_keys = sorted(aggregated.keys())
+    for (gym_type, dataset) in sorted_keys:
+        counts = aggregated[(gym_type, dataset)]
+        success = counts['success']
+        bug = counts['bug']
+        notrun = counts['notrun']
+        total = success + bug + notrun
+        success_rate = (success / total * 100) if total > 0 else 0
+        
+        csv_rows.append({
+            'gym_type': gym_type,
+            'dataset': dataset,
+            'success': success,
+            'bug': bug,
+            'notrun': notrun,
+            'total': total,
+            'success_rate': f"{success_rate:.2f}%"
+        })
+
+    # 4. 写入 CSV
+    fieldnames = ['gym_type', 'dataset', 'success', 'bug', 'notrun', 'total', 'success_rate']
+    with open(output_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(csv_rows)
+
+    print(f"数据聚合摘要报告已保存到: {output_file}")
+
 
 def main():
     import argparse
@@ -1312,7 +1475,9 @@ def main():
     parser.add_argument('--intersection', '-i', action='store_true',
                         help='生成交集分析报告')
     parser.add_argument('--csv', '-c', action='store_true',
-                        help='生成综合 CSV 报告和 Bug 列表 TXT', default=True)
+                        help='生成综合 CSV 报告、Bug 列表 CSV 和汇总摘要 CSV', default=True)
+    parser.add_argument('--summary', '-s', action='store_true',
+                        help='生成按数据集聚合的汇总摘要 CSV')
     parser.add_argument('--output', '-o', type=str, default=None,
                         help='报告输出文件路径')
     parser.add_argument('--bugs-output', type=str, default=None,
@@ -1334,6 +1499,10 @@ def main():
         # 生成详细bug报告
         output_file = args.output or str(ROOT / 'notebooks' / 'ls' / 'bug_report.txt')
         generate_bug_report(output_file)
+    elif args.summary:
+        # 仅生成汇总摘要报告
+        output_file = args.output or str(ROOT / 'notebooks' / 'ls' / 'dataset_gym_summary.csv')
+        generate_aggregated_summary_csv(output_file)
     else:
         # 原有功能
         print("TSGym 结果检查工具 (按预测长度分组)")
@@ -1344,7 +1513,8 @@ def main():
         
         print("\n" + "=" * 70)
         print("检查完成!")
-        print("\n提示: 使用 --csv 参数可生成综合 CSV 报告和 Bug 列表")
+        print("\n提示: 使用 --csv 参数可生成详细和汇总 CSV 报告")
+        print("提示: 使用 --summary 参数可仅生成按数据集聚合的汇总报告")
         print("提示: 使用 --bug-report 参数可生成详细的Bug报告")
         print("提示: 使用 --table 参数可生成表格形式的报告")
         print("提示: 使用 --intersection 参数可生成交集分析报告")

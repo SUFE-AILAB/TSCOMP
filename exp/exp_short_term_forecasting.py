@@ -176,6 +176,12 @@ class Exp_Short_Term_Forecast(Exp_Basic):
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
 
                     batch_y_mark = batch_y_mark[:, -self.args.pred_len:, f_dim:].to(self.device)
+                    
+                    if (i + 1) % 100 == 0:
+                        if torch.isnan(outputs).any():
+                            print(f"DEBUG: outputs contains NaNs!")
+                        print(f"DEBUG: outputs mean: {outputs.mean().item()}, max: {outputs.max().item()}")
+
                     if isinstance(criterion, (mape_loss, mase_loss, smape_loss)):
                         loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
                     else:

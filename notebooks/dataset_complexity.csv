@@ -1,0 +1,26 @@
+Dataset,Domain,Frequency,Lengths,Dim,Complexity
+PEMS-BAY,Traffic,5 mins,52116,325,16937700
+traffic,Traffic,1 hour,17544,862,15122928
+electricity,Electricity,1 hour,26304,321,8443584
+solar,Energy,10 mins,52560,137,7200720
+METR-LA,Traffic,5 mins,34272,207,7094304
+PEMS04,Traffic,5 mins,16992,307,5216544
+PEMS08,Traffic,5 mins,17856,170,3035520
+Wike2000,Web,1 day,792,2000,1584000
+Covid-19,Health,1 day,1392,948,1319616
+weather,Environment,10 mins,52696,21,1106616
+ETTm1,Electricity,15 mins,57600,7,403200
+ETTm2,Electricity,15 mins,57600,7,403200
+AQShunyi,Environment,1 hour,35064,11,385704
+AQWan,Environment,1 hour,35064,11,385704
+wind,Energy,15 mins,48673,7,340711
+CzeLan,Nature,30 mins,19934,11,219274
+ZafNoo,Nature,30 mins,19225,11,211475
+ETTh2,Electricity,1 hour,14400,7,100800
+ETTh1,Electricity,1 hour,14400,7,100800
+NN5,Banking,1 day,791,111,87801
+FRED-MD,Economic,1 month,728,107,77896
+exchange_rate,Economic,1 day,7588,8,60704
+ili,Health,1 week,966,7,6762
+nasdaq,Stock,1 day,1244,5,6220
+nyse,Stock,1 day,1243,5,6215

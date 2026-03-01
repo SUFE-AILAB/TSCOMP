@@ -1,0 +1,53 @@
+
+model_name=OLinear
+
+seq_lens=(96 96 96 96)
+pred_lens=(96 192 336 720)
+
+d_models=(256 128 256 256)
+
+cuda_ids1=(0 0 0 0)
+
+learning_rate=(1e-4 1e-4 1e-4 1e-4)
+dropout=(0.0 0.0 0.0 0.0)
+train_epochs=(1 1 1 1)
+bs=(64 32 64 32)
+
+
+for ((i = 0; i < 4; i++))
+do
+
+    seq_len=${seq_lens[i]}
+    pred_len=${pred_lens[i]}
+
+    python -u run.py \
+      --task_name long_term_forecast \
+      --is_training 1 \
+      --root_path ./dataset/exchange_rate/ \
+      --data_path exchange_rate.csv \
+      --q_mat_dir exchange_rate_${seq_len}_ratio0.7.npy \
+      --q_out_mat_dir exchange_rate_${pred_len}_ratio0.7.npy \
+      --model_id Exchange_OLinear_${seq_len}_${pred_len} \
+      --model $model_name \
+      --data custom \
+      --features M \
+      --label_len 0 \
+      --seq_len ${seq_len} \
+      --pred_len ${pred_len} \
+      --enc_in 8 \
+      --dec_in 8 \
+      --c_out 8 \
+      --des 'Exp' \
+      --d_model ${d_models[i]} \
+      --d_ff ${d_models[i]} \
+      --batch_size ${bs[i]} \
+      --learning_rate ${learning_rate[i]} \
+      --itr 1 \
+      --e_layers 2 \
+      --train_epochs ${train_epochs[i]} \
+      --patience 8 \
+      --lradj type1 \
+      --loss WeightedL1 \
+      --dropout ${dropout[i]}
+
+done

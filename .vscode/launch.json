@@ -1,0 +1,61 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1",
+                // "HF_ENDPOINT": "https://hf-mirror.com"
+            },
+        },
+        {
+            "name": "Python: Debug TSGym",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run.py",
+            "console": "integratedTerminal",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                // "HF_ENDPOINT": "https://hf-mirror.com"
+            },
+            "args": [
+                "--task_name", "long_term_forecast",
+                "--is_training", "1",
+                "--root_path", "./dataset/ETT-small/",
+                "--data_path", "ETTh2.csv",
+                "--model_id", "ETTh2_96_96",
+                "--model", "TSGym120004_False_False_DishTS_MoEMA_False_series-patching_MLP_NormLin_self-attention_True_False_False",
+                "--data", "ETTh2",
+                "--features", "M",
+                "--seq_len", "96",
+                "--label_len", "48",
+                "--pred_len", "96",
+                "--e_layers", "2",
+                "--d_layers", "1",
+                "--factor", "3",
+                "--enc_in", "7",
+                "--dec_in", "7",
+                "--c_out", "7",
+                "--des", "Exp",
+                "--itr", "1",
+                "--down_sampling_layers", "3",
+                "--down_sampling_method", "avg",
+                "--down_sampling_window", "2",
+                "--d_model", "64",
+                "--d_ff", "256",
+                "--train_epochs", "30",
+                "--loss", "FreDFLoss",
+                "--learning_rate", "0.0001",
+                "--lradj", "cosine"
+            ],
+            "python": "/data/nishome/user1/miniconda3/envs/mqenv/bin/python" // 修改为你的虚拟环境路径
+        },
+    ]
+}

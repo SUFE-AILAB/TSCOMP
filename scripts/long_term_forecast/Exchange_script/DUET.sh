@@ -1,0 +1,187 @@
+model_name=DUET
+batch_size=128
+factor=3
+k=3
+num_experts=5
+patch_len=48
+patience=5
+seq_len=96
+
+python3 -u run.py \
+  --task_name long_term_forecast \
+  --is_training 1 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_96_96 \
+  --model $model_name \
+  --data custom \
+  --features M \
+  --seq_len $seq_len \
+  --label_len 48 \
+  --pred_len 96 \
+  --e_layers 3 \
+  --d_layers 1 \
+  --d_model 512 \
+  --d_ff 512 \
+  --hidden_size 128 \
+  --n_heads 4 \
+  --seg_len 6 \
+  --win_size 2\
+  --activation 'gelu' \
+  --patch_len $patch_len \
+  --stride 8 \
+  --period_len 4 \
+  --dropout 0.2 \
+  --fc_dropout 0.05 \
+  --moving_avg 25 \
+  --lradj 'type1' \
+  --batch_size $batch_size \
+  --learning_rate 0.0001  \
+  --train_epochs 100 \
+  --loss 'MAE' \
+  --patience $patience \
+  --num_experts $num_experts \
+  --noisy_gating \
+  --k $k \
+  --CI \
+  --factor $factor \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
+  --des 'Exp' \
+  --itr 1
+
+python3 -u run.py \
+  --task_name long_term_forecast \
+  --is_training 1 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_96_192 \
+  --model $model_name \
+  --data custom \
+  --features M \
+  --seq_len $seq_len \
+  --label_len 48 \
+  --pred_len 192 \
+  --e_layers 1 \
+  --d_layers 1 \
+  --d_model 1024 \
+  --d_ff 2048 \
+  --hidden_size 128 \
+  --n_heads 16 \
+  --seg_len 6 \
+  --win_size 2\
+  --activation 'gelu' \
+  --patch_len $patch_len \
+  --stride 8 \
+  --period_len 4 \
+  --dropout 0.2 \
+  --fc_dropout 0 \
+  --moving_avg 25 \
+  --lradj 'type3' \
+  --batch_size $batch_size \
+  --learning_rate 5e-05  \
+  --train_epochs 100 \
+  --loss 'MAE' \
+  --patience $patience \
+  --num_experts $num_experts \
+  --noisy_gating \
+  --k $k \
+  --CI \
+  --d_layers 1 \
+  --factor $factor \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
+  --des 'Exp' \
+  --itr 1
+
+python3 -u run.py \
+  --task_name long_term_forecast \
+  --is_training 1 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_96_336 \
+  --model $model_name \
+  --data custom \
+  --features M \
+  --seq_len $seq_len \
+  --label_len 48 \
+  --pred_len 336 \
+  --e_layers 1 \
+  --d_layers 1 \
+  --d_model 2048 \
+  --d_ff 2048 \
+  --hidden_size 128 \
+  --n_heads 1 \
+  --seg_len 6 \
+  --win_size 2\
+  --activation 'gelu' \
+  --patch_len $patch_len \
+  --stride 8 \
+  --period_len 4 \
+  --dropout 0.2 \
+  --fc_dropout 0 \
+  --moving_avg 25 \
+  --lradj 'type1' \
+  --batch_size $batch_size \
+  --learning_rate 5e-05 \
+  --train_epochs 100 \
+  --loss 'MAE' \
+  --patience $patience \
+  --num_experts $num_experts \
+  --noisy_gating \
+  --k $k \
+  --CI \
+  --d_layers 1 \
+  --factor $factor \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
+  --des 'Exp' \
+  --itr 1
+
+python3 -u run.py \
+  --task_name long_term_forecast \
+  --is_training 1 \
+  --root_path ./dataset/exchange_rate/ \
+  --data_path exchange_rate.csv \
+  --model_id Exchange_96_720 \
+  --model $model_name \
+  --data custom \
+  --features M \
+  --seq_len $seq_len \
+  --label_len 48 \
+  --pred_len 720 \
+  --e_layers 1 \
+  --d_layers 1 \
+  --d_model 2048 \
+  --d_ff 2048 \
+  --hidden_size 256 \
+  --n_heads 1 \
+  --seg_len 6 \
+  --win_size 2\
+  --activation 'gelu' \
+  --patch_len $patch_len \
+  --stride 8 \
+  --period_len 4 \
+  --dropout 0.4 \
+  --fc_dropout 0.1 \
+  --moving_avg 25 \
+  --lradj 'type1' \
+  --batch_size $batch_size \
+  --learning_rate 0.0001 \
+  --train_epochs 100 \
+  --loss 'MAE' \
+  --patience $patience \
+  --num_experts $num_experts \
+  --noisy_gating \
+  --k $k \
+  --CI \
+  --d_layers 1 \
+  --factor $factor \
+  --enc_in 8 \
+  --dec_in 8 \
+  --c_out 8 \
+  --des 'Exp' \
+  --itr 1

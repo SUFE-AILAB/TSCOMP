@@ -7,7 +7,7 @@
 - We add distribution plot analyses of meta-features based on our method (TabPFN-based) and other statistical methods. We found that the meta-features extracted by TabPFN exhibit a more pronounced normal distribution.
 
 <p align="center">
-  <img src="figures/meta_feature_distribution_comparison.pdf" width="90%">
+  <img src="figures/meta_feature_distribution_comparison.png" width="90%">
 </p>
 
 

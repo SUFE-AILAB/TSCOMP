@@ -2,6 +2,17 @@
 
 ---
 
+## 🌟 News
+
+- We add distribution plot analyses of meta-features based on our method (TabPFN-based) and other statistical methods. We found that the meta-features extracted by TabPFN exhibit a more pronounced normal distribution.
+
+<p align="center">
+  <img src="figures/meta_feature_distribution_comparison.pdf" width="90%">
+</p>
+
+
+## 🌟 Introduction
+
 Official implementation of **TSCOMP**.
 
 As the field of multivariate time series forecasting (MTSF) continues to diversify across Transformers, MLPs, Large Language Models (LLMs), and Time Series Foundation Models (TSFMs), existing studies typically address concerns about methodological effectiveness by conducting large-scale benchmarks. These studies consistently indicate that no single approach dominates across all scenarios.

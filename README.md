@@ -6,11 +6,17 @@
 
 - **Meta Learning for Time Series Forecasting**: we add the code for meta-learning-based model selection used in the paper. You can:
   - Run meta learning experiments:
-    - `python meta/run.py --mode simple --test_dataset ETTh2 --meta_model_type mlp`
+      ```bash
+      python meta/run.py --mode simple --test_dataset ETTh2 --meta_model_type mlp
+      ```
   - Extract meta-features for datasets:
-    - `python meta/meta_features/get_meta_features_LTF.py --meta_feature_type tabpfn`
+    ```bash
+    python meta/meta_features/get_meta_features_LTF.py --meta_feature_type tabpfn
+    ```
   - Apply meta selection to new datasets:
-    - `python meta/run_custom.py --new_dataset my_dataset --checkpoint_path <path> --new_dataset_path <csv_path> --scripts_root <scripts_dir>`
+    ```bash
+    python meta/run_custom.py --new_dataset my_dataset --checkpoint_path <path> --new_dataset_path <csv_path> --scripts_root <scripts_dir>
+    ```
 
 
 - We add distribution plot analyses of meta-features based on our method (TabPFN-based) and other statistical methods. We found that the meta-features extracted by TabPFN exhibit a more pronounced normal distribution.

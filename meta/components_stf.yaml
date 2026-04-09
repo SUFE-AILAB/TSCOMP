@@ -1,0 +1,76 @@
+# STF (Short-Term Forecasting) Components Configuration
+# This file defines the allowed values for each component in the TSGym search space
+
+gym_CI:
+  - 'False'
+
+gym_SI:
+  - 'False'
+  - 'True'
+
+gym_normalize:
+  - 'DishTS'
+  - 'None'
+  - 'RevIN'
+  - 'Stat'
+
+gym_decomp:
+  - 'DFT'
+  - 'MA'
+  - 'MoEMA'
+  - 'None'
+
+gym_use_decomp:
+  - 'False'
+  - 'True'
+
+gym_tokenize:
+  - 'ortho-encoding'
+  - 'series-encoding'
+  - 'series-patching'
+
+gym_backbone:
+  - 'MLP'
+
+gym_head:
+  - 'DNN'
+  - 'NormLin'
+
+gym_attention:
+  - 'null'
+
+gym_output:
+  - 'True'
+
+gym_pos_embed:
+  - 'False'
+
+gym_indiv:
+  - 'False'
+  - 'True'
+
+gym_d_model:
+  - '64'
+
+gym_d_ff:
+  - '256'
+
+gym_e_layers:
+  - '2'
+
+gym_epochs:
+  - '30'
+
+gym_loss:
+  - 'DBLoss'
+  - 'FreDFLoss'
+  - 'MAPE'
+  - 'MASE'
+  - 'PSLoss'
+  - 'SMAPE'
+
+gym_lr:
+  - '0.0001'
+
+gym_lrs:
+  - 'cosine'

@@ -38,6 +38,17 @@ To bridge these gaps, we propose **TSCOMP**, a comprehensive framework designed 
 
 ---
 
+## 🚀 Method Innovations
+
+- **Comprehensive benchmark via hierarchical deconstruction**
+  We propose TSCOMP, the first large-scale benchmark that systematically deconstructs deep MTSF methods. TSCOMP examines the MTSF workflow through a hierarchical design space, spanning from the overall modeling pipeline to fine-grained specific components. To rigorously assess these elements, we design a constrained orthogonal evaluation protocol that isolates the core mechanisms driving forecasting performance.
+- **Multi-view analysis and insights**
+  We conduct a large-scale analysis that provides both overall and conditional insights. Beyond evaluating general component effectiveness, we extensively investigate performance variations across different backbones (including specific models and emerging LLMs/TSFMs), diverse data domains, and data characteristics. Furthermore, we explore the intricate interaction effects among deconstructed components, verifying community claims with rigorous experimental evidence.
+- **Open-sourced corpus and automated construction**
+  We open-source the resulting fine-grained performance corpus and validate its utility for model design. This corpus facilitates automated construction of MTSF methods that are adaptively tailored to different forecasting scenarios, consistently achieving better results than state-of-the-art methods.
+
+---
+
 ## 🌟 Framework Overview
 
 <p align="center">
@@ -46,14 +57,50 @@ To bridge these gaps, we propose **TSCOMP**, a comprehensive framework designed 
 
 **Overview of the proposed TSCOMP framework.** TSCOMP deconstructs existing SOTA models into a modular component pool. Through large-scale experimental analysis, TSCOMP conducts bottom-up evaluation from component-level comparisons to dimension-level and pipeline-level importance ranking. The resulting performance corpus enables automated model construction via a pre-trained meta-predictor that delivers zero-shot, data-adaptive component selection.
 
+### Component-level Deconstruction
+
+<p align="center">
+  <img src="figures/components.png" width="50%">
+</p>
+
+**Deconstructed component taxonomy in TSCOMP.**
+We organize forecasting model design into a hierarchical component space for controlled and interpretable benchmarking.
+
+The design space is structured into three levels:
+
+- **Pipeline level:** the standard MTSF workflow is modeled as
+  *Series Preprocessing* -> *Series Encoding* -> *Network Architecture* -> *Network Optimization*.
+- **Dimension level:** each pipeline stage contains multiple component dimensions, such as normalization, tokenization, and attention mechanisms.
+- **Component level:** each dimension includes concrete implementations extracted from SOTA models, such as RevIN normalization, series patching, and sparse attention.
+
+This deconstruction forms a structured and extensible design space that covers diverse modeling strategies.
+
+### Constrained Orthogonal Pool Generation
+
+<p align="center">
+  <img src="figures/ConstrainedOrthogonalPoolGeneration.png" width="50%">
+</p>
+
+**Constrained orthogonal pool generation process.**
+Following the protocol in our paper, TSCOMP constructs valid model combinations under compatibility constraints to ensure fair and systematic large-scale evaluation.
+
+**Design Space Complexity.**
+The Cartesian product of component dimensions yields more than $10^6$ theoretical configurations. Many combinations are invalid due to mechanism-level incompatibilities (for example, inverted encoding conflicts with channel-independent strategies, and some pre-trained backbones require specific attention protocols). After filtering invalid designs, thousands of candidates still remain, which is computationally prohibitive for multi-dataset benchmarking.
+
+**Pairwise Coverage Criterion.**
+To balance rigor and efficiency, we adopt a constrained orthogonal design that targets pairwise coverage of valid component interactions. Compared with exhaustive $k$-way coverage ($k \geq 3$), this strategy is computationally tractable; compared with single-component analysis, it better captures interaction effects. We use a greedy construction process to iteratively select configurations that maximize uncovered valid pairs, resulting in a compact yet representative pool (about 136 models per horizon in our setting).
+
 ---
 
-## 🚀 Key Contributions
+## 📁 Repository Structure
 
-- **Comprehensive Benchmark via Hierarchical Deconstruction**We propose TSCOMP, the first large-scale benchmark that systematically deconstructs deep MTSF methods. TSCOMP examines the MTSF workflow through a hierarchical design space, spanning from the overall modeling pipeline to fine-grained specific components. To rigorously assess these elements, we design a constrained orthogonal evaluation protocol that isolates the core mechanisms driving forecasting performance.
-- **Multi-View Analysis and Insights**We conduct a large-scale analysis that provides both overall and conditional insights. Beyond evaluating general component effectiveness, we extensively investigate performance variations across different backbones (including specific models and emerging LLMs/TSFMs), diverse data domains, and data characteristics. Furthermore, we explore the intricate interaction effects among deconstructed components, verifying community claims with rigorous experimental evidence.
-- **Open-Sourced Corpus and Automated Construction**
-  We open-source the resulting fine-grained performance corpus and validate its utility for model design. This corpus facilitates automated construction of MTSF methods that are adaptively tailored to different forecasting scenarios, consistently achieving better results than state-of-the-art methods.
+- `data_provider/`: dataset loading and preprocessing.
+- `models/`: forecasting model implementations.
+- `layers/`: reusable neural network building blocks.
+- `exp/`: experiment pipelines for forecasting tasks.
+- `scripts/`: generated batch scripts for benchmark execution.
+- `meta/`: meta-feature extraction and meta-learning based model selection.
+- `figures/`: framework and analysis figures used in the paper and README.
 
 ---
 
@@ -61,16 +108,23 @@ To bridge these gaps, we propose **TSCOMP**, a comprehensive framework designed 
 
 To reproduce the experimental results for TSCOMP, you need to first generate the execution scripts for the Constrained Orthogonal Pool and the Random Pool, and then run these generated scripts.
 
-### 1. Generate Execution Scripts (.sh)
+### 1. Environment Setup
 
-Please first run the following Python scripts to generate bash scripts for batch testing of short-term and long-term forecasting tasks:
+```bash
+conda env create -f environment.yml
+conda activate tscomp
+```
 
-- **Short-term Forecasting:**
+### 2. Generate Execution Scripts (.sh)
+
+Please run the following Python scripts to generate bash scripts for batch testing of short-term and long-term forecasting tasks:
+
+- **Short-term forecasting:**
 
   ```bash
   python notebooks/bash_generator_short_term_forecasting_sota_seed.py
   ```
-- **Long-term Forecasting:**
+- **Long-term forecasting:**
 
   ```bash
   python notebooks/bash_generator_long_term_forecasting_sota_seed.py
@@ -78,7 +132,7 @@ Please first run the following Python scripts to generate bash scripts for batch
 
 After executing the above code, a series of `.sh` script files will be generated in `scripts/` (or the output directory specified in the code).
 
-### 2. Run Experimental Scripts
+### 3. Run Experimental Scripts
 
 Once generated, you can directly run the `.sh` scripts to build and evaluate the TSCOMP model combinations within the benchmark, for example:
 
@@ -86,9 +140,25 @@ Once generated, you can directly run the `.sh` scripts to build and evaluate the
 bash scripts/<generated_script_name>.sh
 ```
 
+### 4. Meta-learning (Optional)
+
+- Run meta learning experiments:
+
+  ```bash
+  python meta/run.py --mode simple --test_dataset ETTh2 --meta_model_type mlp
+  ```
+- Extract meta-features for datasets:
+
+  ```bash
+  python meta/meta_features/get_meta_features_LTF.py --meta_feature_type tabpfn
+  ```
+- Apply meta selection to new datasets:
+
+  ```bash
+  python meta/run_custom.py --new_dataset my_dataset --checkpoint_path <path> --new_dataset_path <csv_path> --scripts_root <scripts_dir>
+  ```
 ---
 
-<!-- 
 ## 📝 Citation
 
 If you find this work useful, please consider citing:
@@ -100,5 +170,6 @@ If you find this work useful, please consider citing:
   booktitle={Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD)},
   year={2025}
 }
-``` 
--->
+```
+
+---

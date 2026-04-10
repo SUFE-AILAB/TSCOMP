@@ -1,4 +1,4 @@
-name: mqenv
+name: tscomp
 channels:
   - conda-forge
   - nvidia

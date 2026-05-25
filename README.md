@@ -142,6 +142,10 @@ bash scripts/<generated_script_name>.sh
 
 ### 4. Meta-learning (Optional)
 
+- Large scale compoents-level experiments results (meta learning corpus):
+  
+  https://huggingface.co/datasets/Braudo/TSCOMP_corpus
+
 - Run meta learning experiments:
 
   ```bash

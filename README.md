@@ -164,11 +164,12 @@ bash scripts/<generated_script_name>.sh
 If you find this work useful, please consider citing:
 
 ```bibtex
-@inproceedings{liang2025beyond,
-  title={Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting},
-  author={Liang, Shuang and Hou, Chaochuan and Yao, Xu and Wang, Shiping and Huang, Hailiang and Han, Songqiao and Jiang, Minqi},
-  booktitle={Proceedings of the 31st ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD)},
-  year={2025}
+@inproceedings{
+liang2026beyond,
+title={Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting},
+author={Shuang Liang and Chaochuan Hou and Xu Yao and Shiping wang and Hailiang Huang and Songqiao Han and Minqi Jiang},
+booktitle={KDD 2026 Datasets and Benchmarks Track (Cycle 2)},
+year={2026}
 }
 ```
 

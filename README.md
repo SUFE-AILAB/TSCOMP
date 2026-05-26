@@ -140,11 +140,19 @@ Once generated, you can directly run the `.sh` scripts to build and evaluate the
 bash scripts/<generated_script_name>.sh
 ```
 
-### 4. Meta-learning (Optional)
+### 4. TSCOMP Corpus & Advanced Analysis
 
-- Large scale compoents-level experiments results (meta learning corpus):
-  
-  https://huggingface.co/datasets/Braudo/TSCOMP_corpus
+We provide the full experimental results corpus at our [Hugging Face Dataset page](https://huggingface.co/datasets/Braudo/TSCOMP_corpus). Based on this corpus, you can directly perform orthogonal pool statistical analysis and meta-learner training.
+
+#### 4.1. Analyze Orthogonal Pool Results
+
+After extracting the corpus (or running the experiments yourself), you can run the following analysis script to parse evaluation metrics and conduct comparative studies:
+
+```bash
+python notebooks/analyze_orthogonal_pool.py
+```
+
+#### 4.2. Meta-learning (Optional)
 
 - Run meta learning experiments:
 
@@ -171,8 +179,8 @@ If you find this work useful, please consider citing:
 @inproceedings{
 liang2026beyond,
 title={Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting},
-author={Shuang Liang and Chaochuan Hou and Xu Yao and Shiping wang and Hailiang Huang and Songqiao Han and Minqi Jiang},
-booktitle={KDD 2026 Datasets and Benchmarks Track (Cycle 2)},
+author={Shuang Liang and Chaochuan Hou and Xu Yao and Shiping Wang and Hailiang Huang and Songqiao Han and Minqi Jiang},
+booktitle={KDD 2026 Datasets and Benchmarks Track},
 year={2026}
 }
 ```

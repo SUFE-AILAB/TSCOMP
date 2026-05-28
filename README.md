@@ -96,7 +96,7 @@ You can directly perform statistical analysis on our [Hugging Face Dataset page]
 python notebooks/analyze_orthogonal_pool.py
 ```
 
-### 5. Meta-learning (Optional)
+### 5. Meta-learning
 
 Based on our performance corpus, you can directly perform meta-learner training, meta-feature extraction, and zero-shot model selection:
 

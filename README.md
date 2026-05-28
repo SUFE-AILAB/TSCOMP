@@ -1,188 +1,230 @@
-# Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting
+# TSCOMP
 
----
+**Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting**
 
-## 🌟 News
+This repository is the official PyTorch implementation of the paper **"Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting"**, which has been accepted by the **KDD 2026 Datasets and Benchmarks Track**.
 
-- **Meta Learning for Time Series Forecasting**: we add the code for meta-learning-based model selection used in the paper. You can:
-  - Run meta learning experiments:
-      ```bash
-      python meta/run.py --mode simple --test_dataset ETTh2 --meta_model_type mlp
-      ```
-  - Extract meta-features for datasets:
-    ```bash
-    python meta/meta_features/get_meta_features_LTF.py --meta_feature_type tabpfn
-    ```
-  - Apply meta selection to new datasets:
-    ```bash
-    python meta/run_custom.py --new_dataset my_dataset --checkpoint_path <path> --new_dataset_path <csv_path> --scripts_root <scripts_dir>
-    ```
+[![KDD 2026](https://img.shields.io/badge/KDD-2026-blue.svg)](https://kdd2026.kdd.org/)
+[![arXiv](https://img.shields.io/badge/arXiv-2605.26562-b31b1b.svg)](https://arxiv.org/abs/2605.26562)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20395659.svg)](https://doi.org/10.5281/zenodo.20395659)
 
-
-- We add distribution plot analyses of meta-features based on our method (TabPFN-based) and other statistical methods. We found that the meta-features extracted by TabPFN exhibit a more pronounced normal distribution.
+TSCOMP is the first large-scale benchmark that systematically deconstructs deep multivariate time-series forecasting (MTSF) methods into their core, fine-grained components—spanning series preprocessing, encoding strategies, network backbones (including specific, LLM, and TSFM models), and optimization methods.
 
 <p align="center">
-  <img src="figures/meta_feature_distribution.png" width="90%">
+  <img src="figures/TSGym-Overview.jpg" width="90%">
 </p>
-
-
-## 🌟 Introduction
-
-Official implementation of **TSCOMP**.
-
-As the field of multivariate time series forecasting (MTSF) continues to diversify across Transformers, MLPs, Large Language Models (LLMs), and Time Series Foundation Models (TSFMs), existing studies typically address concerns about methodological effectiveness by conducting large-scale benchmarks. These studies consistently indicate that no single approach dominates across all scenarios.
-
-However, existing benchmarks typically evaluate models holistically, failing to analyze the multi-level hierarchy of MTSF pipelines. Consequently, the contributions of internal mechanisms remain obscured, hindering the combination of effective designs into superior solutions.
-
-To bridge these gaps, we propose **TSCOMP**, a comprehensive framework designed to systematically deconstruct and benchmark deep MTSF methods. Instead of viewing models as indivisible black boxes, TSCOMP performs a hierarchical deconstruction across three levels: the *Pipeline*, *Component Dimensions*, and *Deconstructed Components*.
 
 ---
 
-## 🚀 Method Innovations
+## 📋 Table of Contents
 
-- **Comprehensive benchmark via hierarchical deconstruction**
-  We propose TSCOMP, the first large-scale benchmark that systematically deconstructs deep MTSF methods. TSCOMP examines the MTSF workflow through a hierarchical design space, spanning from the overall modeling pipeline to fine-grained specific components. To rigorously assess these elements, we design a constrained orthogonal evaluation protocol that isolates the core mechanisms driving forecasting performance.
-- **Multi-view analysis and insights**
-  We conduct a large-scale analysis that provides both overall and conditional insights. Beyond evaluating general component effectiveness, we extensively investigate performance variations across different backbones (including specific models and emerging LLMs/TSFMs), diverse data domains, and data characteristics. Furthermore, we explore the intricate interaction effects among deconstructed components, verifying community claims with rigorous experimental evidence.
-- **Open-sourced corpus and automated construction**
-  We open-source the resulting fine-grained performance corpus and validate its utility for model design. This corpus facilitates automated construction of MTSF methods that are adaptively tailored to different forecasting scenarios, consistently achieving better results than state-of-the-art methods.
-
----
-
-## 🌟 Framework Overview
-
-<p align="center">
-  <img src="figures/TSGym_Overview.jpg" width="90%">
-</p>
-
-**Overview of the proposed TSCOMP framework.** TSCOMP deconstructs existing SOTA models into a modular component pool. Through large-scale experimental analysis, TSCOMP conducts bottom-up evaluation from component-level comparisons to dimension-level and pipeline-level importance ranking. The resulting performance corpus enables automated model construction via a pre-trained meta-predictor that delivers zero-shot, data-adaptive component selection.
-
-### Component-level Deconstruction
-
-<p align="center">
-  <img src="figures/components.png" width="50%">
-</p>
-
-**Deconstructed component taxonomy in TSCOMP.**
-We organize forecasting model design into a hierarchical component space for controlled and interpretable benchmarking.
-
-The design space is structured into three levels:
-
-- **Pipeline level:** the standard MTSF workflow is modeled as
-  *Series Preprocessing* -> *Series Encoding* -> *Network Architecture* -> *Network Optimization*.
-- **Dimension level:** each pipeline stage contains multiple component dimensions, such as normalization, tokenization, and attention mechanisms.
-- **Component level:** each dimension includes concrete implementations extracted from SOTA models, such as RevIN normalization, series patching, and sparse attention.
-
-This deconstruction forms a structured and extensible design space that covers diverse modeling strategies.
-
-### Constrained Orthogonal Pool Generation
-
-<p align="center">
-  <img src="figures/ConstrainedOrthogonalPoolGeneration.png" width="50%">
-</p>
-
-**Constrained orthogonal pool generation process.**
-Following the protocol in our paper, TSCOMP constructs valid model combinations under compatibility constraints to ensure fair and systematic large-scale evaluation.
-
-**Design Space Complexity.**
-The Cartesian product of component dimensions yields more than $10^6$ theoretical configurations. Many combinations are invalid due to mechanism-level incompatibilities (for example, inverted encoding conflicts with channel-independent strategies, and some pre-trained backbones require specific attention protocols). After filtering invalid designs, thousands of candidates still remain, which is computationally prohibitive for multi-dataset benchmarking.
-
-**Pairwise Coverage Criterion.**
-To balance rigor and efficiency, we adopt a constrained orthogonal design that targets pairwise coverage of valid component interactions. Compared with exhaustive $k$-way coverage ($k \geq 3$), this strategy is computationally tractable; compared with single-component analysis, it better captures interaction effects. We use a greedy construction process to iteratively select configurations that maximize uncovered valid pairs, resulting in a compact yet representative pool (about 136 models per horizon in our setting).
+- [Key Features &amp; Innovations](#key-features--innovations)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Supported Components &amp; Design Space](#supported-components--design-space)
+- [Supported Datasets](#supported-datasets)
+- [Supported Baseline](#supported-baselines)
+- [Repository Structure](#repository-structure)
+- [Citation](#citation)
+- [Acknowledgments](#acknowledgments)
 
 ---
 
-## 📁 Repository Structure
+## ✨ Key Features & Innovations
 
-- `data_provider/`: dataset loading and preprocessing.
-- `models/`: forecasting model implementations.
-- `layers/`: reusable neural network building blocks.
-- `exp/`: experiment pipelines for forecasting tasks.
-- `scripts/`: generated batch scripts for benchmark execution.
-- `meta/`: meta-feature extraction and meta-learning based model selection.
-- `figures/`: framework and analysis figures used in the paper and README.
+TSCOMP stands out as a pioneering benchmark and framework for multivariate time-series forecasting (MTSF) with three core academic contributions:
+
+- **Comprehensive Benchmark via Hierarchical Deconstruction**:
+  Rather than evaluating models holistically as indivisible "black boxes," TSCOMP deconstructs deep forecasting methods into a multi-stage modeling pipeline (**4 stages, 11 dimensions, and 49 fine-grained components**). To rigorously assess these elements, we implement a **constrained orthogonal experimental protocol** that systematically isolates the core mechanisms driving forecasting performance, reducing over $10^6$ combinatorial variants into a computationally tractable pool.
+- **Rigorous Multi-View Analysis & Insights**:
+  We conduct a large-scale analysis using a multi-tiered statistical framework to examine component-level dynamics. Beyond general performance rankings, we extensively investigate component sensitivities and interaction synergies across diverse backbones (including MLPs, RNNs, Transformers, and emerging LLMs/TSFMs) and data characteristics.
+- **Open-Sourced Corpus & Automated Zero-Shot Construction**:
+  We release a massive, fine-grained **performance corpus consisting of over 20,000 evaluations**. Leveraging this corpus, TSCOMP trains a pre-trained meta-predictor utilizing TabPFN-extracted meta-features to adaptively construct optimal component configurations for unseen datasets in a **zero-shot manner**—consistently outperforming prevailing SOTA forecasting models and AutoML tools.
 
 ---
 
-## 🚀 Running Experiments
+## 🛠️ Prerequisites
 
-To reproduce the experimental results for TSCOMP, you need to first generate the execution scripts for the Constrained Orthogonal Pool and the Random Pool, and then run these generated scripts.
+- Python 3.8+ (recommended via Conda)
+- PyTorch 2.0+
+- CUDA-enabled GPU (Highly recommended for running large-scale experiment pools)
+- Dependencies listed in [environment.yml](environment.yml)
 
-### 1. Environment Setup
+---
+
+## 🚀 Quick Start
+
+Get `TSCOMP` up and running quickly with this step-by-step guide.
+
+### 1. Installation & Environment Setup
 
 ```bash
+# Clone the repository and enter directory
+git clone https://github.com/SUFE-AILAB/TSCOMP.git
+cd TSCOMP
+
+# Create and activate conda environment
 conda env create -f environment.yml
 conda activate tscomp
 ```
 
 ### 2. Generate Execution Scripts (.sh)
 
-Please run the following Python scripts to generate bash scripts for batch testing of short-term and long-term forecasting tasks:
+Generate the batch execution shell scripts for short-term and long-term forecasting:
 
-- **Short-term forecasting:**
+```bash
+# Generate short-term forecasting execution scripts
+python notebooks/bash_generator_short_term_forecasting_sota_seed.py
 
-  ```bash
-  python notebooks/bash_generator_short_term_forecasting_sota_seed.py
-  ```
-- **Long-term forecasting:**
+# Generate long-term forecasting execution scripts
+python notebooks/bash_generator_long_term_forecasting_sota_seed.py
+```
 
-  ```bash
-  python notebooks/bash_generator_long_term_forecasting_sota_seed.py
-  ```
-
-After executing the above code, a series of `.sh` script files will be generated in `scripts/` (or the output directory specified in the code).
+This will populate ready-to-run `.sh` script files in the `scripts/` directory.
 
 ### 3. Run Experimental Scripts
-
-Once generated, you can directly run the `.sh` scripts to build and evaluate the TSCOMP model combinations within the benchmark, for example:
 
 ```bash
 bash scripts/<generated_script_name>.sh
 ```
 
-### 4. TSCOMP Corpus & Advanced Analysis
+### 4. Corpus Statistical Analysis
 
-We provide the full experimental results corpus at our [Hugging Face Dataset page](https://huggingface.co/datasets/Braudo/TSCOMP_corpus). Based on this corpus, you can directly perform orthogonal pool statistical analysis and meta-learner training.
-
-#### 4.1. Analyze Orthogonal Pool Results
-
-After extracting the corpus (or running the experiments yourself), you can run the following analysis script to parse evaluation metrics and conduct comparative studies:
+You can directly perform statistical analysis on our [Hugging Face Dataset page](https://huggingface.co/datasets/Braudo/TSCOMP_corpus) corpus or your local experimental logs:
 
 ```bash
 python notebooks/analyze_orthogonal_pool.py
 ```
 
-#### 4.2. Meta-learning (Optional)
+### 5. Meta-learning (Optional)
 
-- Run meta learning experiments:
+Based on our performance corpus, you can directly perform meta-learner training, meta-feature extraction, and zero-shot model selection:
+
+- **Run meta-learning experiments (train the meta-predictor):**
 
   ```bash
   python meta/run.py --mode simple --test_dataset ETTh2 --meta_model_type mlp
   ```
-- Extract meta-features for datasets:
+- **Extract meta-features for datasets:**
 
   ```bash
   python meta/meta_features/get_meta_features_LTF.py --meta_feature_type tabpfn
   ```
-- Apply meta selection to new datasets:
+- **Apply meta-selection (zero-shot component recommendation) to new datasets:**
 
   ```bash
   python meta/run_custom.py --new_dataset my_dataset --checkpoint_path <path> --new_dataset_path <csv_path> --scripts_root <scripts_dir>
   ```
+
+#### 📊 Meta-Feature Distribution Analysis
+
+The meta-features extracted by TabPFN exhibit a more pronounced normal distribution compared to traditional statistical methods, significantly enhancing the prediction accuracy of our meta-learning predictor:
+
+<p align="center">
+  <img src="figures/meta_feature_distribution.png" width="80%">
+</p>
+
 ---
+
+## 🧩 Supported Components & Design Space
+
+TSCOMP systematically maps the MTSF pipeline into a standardized, modular design space:
+
+| Pipeline Stage                 | Component Dimension       | Supported Components                                                                                                                                                                                                                                                  | Reference Methods                                                                 |
+| :----------------------------- | :------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------- |
+| **Series Preprocessing** | Series Normalization      | w/o Norm, Stat, RevIN, DishTS                                                                                                                                                                                                                                         | RevIN, DishTS                                                                     |
+|                                | Series Decomposition      | w/o Decomp, Moving Average (MA), MoEMA, DFT                                                                                                                                                                                                                           | MoEMA, TimeMixer                                                                  |
+|                                | Series Sampling/Mixing    | w/o Mixing, w/ Mixing                                                                                                                                                                                                                                                 | TimeMixer                                                                         |
+| **Series Encoding**      | Channel Dependency        | Channel Dependent (CD), Channel Independent (CI)                                                                                                                                                                                                                      | PatchTST, iTransformer                                                            |
+|                                | Series Tokenization       | Point Encoding, Series Patching, Inverted Encoding, Ortho Encoding                                                                                                                                                                                                    | PatchTST, iTransformer, OLinear                                                   |
+|                                | Timestamp Embedding       | w/o Embedding, w/ Embedding                                                                                                                                                                                                                                           | -                                                                                 |
+| **Network Architecture** | Network Backbone          | **MLP**: DNN, NormLin `<br>`**RNN**: GRU, xLSTM `<br>`**Transformer**: w/o Attn, SelfAttn, AutoCorr, SparseAttn, FrequencyAttn, DestationaryAttn `<br>`**LLM**: GPT4TS, TimeLLM `<br>`**TSFM**: Timer, Moment, TimeMoE, Chronos | Informer, Autoformer, FEDformer, GPT4TS, TimeLLM, Timer, Moment, TimeMoE, Chronos |
+|                                | Feature Attention         | w/o Attn, SelfAttn, SparseAttn                                                                                                                                                                                                                                        | -                                                                                 |
+|                                | Retrieval Augmented (RAG) | w/o RAG, w/ RAG                                                                                                                                                                                                                                                       | RAFT                                                                              |
+| **Network Optimization** | Sequence Length           | 48, 96, 192, 512                                                                                                                                                                                                                                                      | -                                                                                 |
+|                                | Loss Function             | MSE, MAE, HUBER, DBLoss, PSLoss, FreDFLoss                                                                                                                                                                                                                            | DBLoss, PSLoss, FreDFLoss                                                         |
+
+### 🧬 Constrained Orthogonal Pool Generation
+
+To navigate the massive combinatorial design space (over $10^6$ possible configurations) without sacrificing pairwise interaction analysis, TSCOMP designs and implements a **constrained orthogonal pool generation algorithm**. This systematically filters incompatible components and guarantees full pairwise coverage, reducing the search space to a computationally tractable pool of **~136 representative models** per horizon:
+
+<p align="center">
+  <img src="figures/ConstrainedOrthogonalPoolGeneration.png" width="80%">
+</p>
+
+---
+
+## 📅 Supported Datasets
+
+TSCOMP includes **14 benchmark datasets** covering various domains and forecasting settings:
+
+- **Long-Term Forecasting (LTF) Datasets**:
+  - **ETT (ETTh1, ETTh2, ETTm1, ETTm2)**: Electricity power transformer datasets containing load and oil temperature measurements.
+  - **ECL (Electricity)**: Hourly electricity consumption records of 321 clients.
+  - **Traffic**: Hourly road occupancy rates measured by 862 sensors on SF Bay Area freeways.
+  - **Weather**: Meteorological dataset featuring 21 indicators recorded at 10-minute intervals.
+  - **Exchange**: Daily exchange rates of 8 different countries.
+  - **Stock (NASDAQ, NYSE)**: Daily stock market trading records (Open, Close, Volume, High, Low).
+  - **FRED-MD**: Monthly macroeconomic indicators from the Federal Reserve Bank.
+  - **ILI**: Weekly influenza-like illness patient tracking data from the CDC.
+  - **Covid-19**: Daily infectious disease transmission tracking data.
+- **Short-Term Forecasting (STF) Datasets**:
+  - **M4**: The classic M4 Competition dataset containing 100,000 unaligned time-series across Yearly, Quarterly, Monthly, Weekly, Daily, and Hourly frequencies.
+
+---
+
+## 🤖 Supported Baselines
+
+TSCOMP deconstructs and benchmarks **28 state-of-the-art baselines** across four major architectural paradigms:
+
+- **MLP-Based Models**: DLinear, OLinear, FiLM, TSMixer, LightTS, FreTS, Koopa, TimeMixer
+- **RNN/SSM-Based Models**: SegRNN, Mamba, xLSTM
+- **CNN-Based Models**: TimesNet, SCINet, MICN
+- **Transformer-Based Models**: Informer, Autoformer, FEDformer, PatchTST, iTransformer, Reformer, PyraFormer, NSTransformer, ETSformer, Crossformer, RAFT, TimeXer, PAttn, DUET
+
+---
+
+## 📁 Repository Structure
+
+```text
+TSCOMP/
+├── data_provider/          # Dataset loading and preprocessing pipelines
+├── models/                 # Forecasting model architectures and deconstructed backbones
+│   ├── DNN.py              # MLP baseline implementations
+│   ├── GRU.py              # RNN baseline implementations
+│   ├── Informer.py         # Informer and variant baseline implementations
+│   ├── TimeLLM.py          # TimeLLM baseline implementations
+│   └── ...                 # 28+ other forecasting baseline models
+├── layers/                 # Reusable neural network building blocks (attention, patches, etc.)
+├── exp/                    # Experiment engines for training, validation, and testing
+├── scripts/                # Generated batch execution scripts for benchmarking
+├── meta/                   # Meta-feature extractors and meta-learning selection model
+│   ├── meta_features/      # TabPFN and statistical feature extraction scripts
+│   ├── run.py              # Simple meta-learning trainer and predictor
+│   └── run_custom.py       # Apply zero-shot meta-selection to custom user datasets
+├── figures/                # Framework charts, innovation diagrams, and analysis plots
+├── notebooks/              # Batch generator notebooks and analysis scripts
+├── environment.yml         # Virtual environment package lists
+├── run.py                  # Main entry point for custom/standard forecasting runs
+└── README.md               # Repository documentation (this file)
+```
 
 ## 📝 Citation
 
-If you find this work useful, please consider citing:
+If you find this benchmark or the TSCOMP framework helpful in your research, please consider citing our paper:
 
 ```bibtex
-@inproceedings{
-liang2026beyond,
-title={Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting},
-author={Shuang Liang and Chaochuan Hou and Xu Yao and Shiping Wang and Hailiang Huang and Songqiao Han and Minqi Jiang},
-booktitle={KDD 2026 Datasets and Benchmarks Track},
-year={2026}
+@inproceedings{liang2026beyond,
+  title={Beyond Holistic Models: Systematic Component-level Benchmarking of Deep Multivariate Time-Series Forecasting},
+  author={Liang, Shuang and Hou, Chaochuan and Yao, Xu and Wang, Shiping and Huang, Hailiang and Han, Songqiao and Jiang, Minqi},
+  booktitle={Proceedings of the 32nd ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD 2026)},
+  year={2026},
+  doi={10.1145/3770855.3817551}
 }
 ```
 
 ---
+
+## 🌟 Acknowledgments
+
+We thank the developers of the [Time-Series-Library (TSL)](https://github.com/thuml/Time-Series-Library) and all baseline models incorporated in this benchmark (e.g., Informer, Autoformer, FEDformer, PatchTST, iTransformer, GPT4TS, etc.) for open-sourcing their outstanding implementations.

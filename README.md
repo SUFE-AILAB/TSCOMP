@@ -6,7 +6,6 @@ This repository is the official PyTorch implementation of the paper **"Beyond Ho
 
 [![KDD 2026](https://img.shields.io/badge/KDD-2026-blue.svg)](https://kdd2026.kdd.org/)
 [![arXiv](https://img.shields.io/badge/arXiv-2605.26562-b31b1b.svg)](https://arxiv.org/abs/2605.26562)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20395659.svg)](https://doi.org/10.5281/zenodo.20395659)
 
 TSCOMP is the first large-scale benchmark that systematically deconstructs deep multivariate time-series forecasting (MTSF) methods into their core, fine-grained components—spanning series preprocessing, encoding strategies, network backbones (including specific, LLM, and TSFM models), and optimization methods.
 
